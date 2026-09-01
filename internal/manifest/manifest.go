@@ -160,13 +160,14 @@ type StatePaths struct {
 }
 
 type Plan struct {
-	Profile    Profile    `json:"profile"`
-	Host       string     `json:"host"`
-	Port       int        `json:"port"`
-	Endpoint   string     `json:"endpoint"`
-	Executable string     `json:"executable"`
-	Args       []string   `json:"args"`
-	State      StatePaths `json:"state"`
+	Profile        Profile    `json:"profile"`
+	Host           string     `json:"host"`
+	Port           int        `json:"port"`
+	Endpoint       string     `json:"endpoint"`
+	HealthEndpoint string     `json:"healthEndpoint"`
+	Executable     string     `json:"executable"`
+	Args           []string   `json:"args"`
+	State          StatePaths `json:"state"`
 }
 
 type BuildOptions struct {

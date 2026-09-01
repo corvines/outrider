@@ -121,8 +121,9 @@ func Resolve(profile Profile, options ResolveOptions) (Plan, error) {
 	}
 	return Plan{
 		Profile: profile, Host: DefaultHost, Port: port,
-		Endpoint:   "http://" + DefaultHost + ":" + strconv.Itoa(port),
-		Executable: executable, Args: args, State: state,
+		Endpoint:       "http://" + DefaultHost + ":" + strconv.Itoa(port),
+		HealthEndpoint: "http://" + DefaultHost + ":" + strconv.Itoa(port) + "/health",
+		Executable:     executable, Args: args, State: state,
 	}, nil
 }
 

@@ -73,6 +73,9 @@ func TestMTPPlan(t *testing.T) {
 	if plan.Endpoint != "http://127.0.0.1:22001" {
 		t.Fatalf("endpoint = %q", plan.Endpoint)
 	}
+	if plan.HealthEndpoint != "http://127.0.0.1:22001/health" {
+		t.Fatalf("health endpoint = %q", plan.HealthEndpoint)
+	}
 	wantExecutable := filepath.Join(root, "llama.cpp", LlamaRelease.Tag, LlamaRelease.Directory, "llama-server")
 	if plan.Executable != wantExecutable {
 		t.Fatalf("executable = %q, want %q", plan.Executable, wantExecutable)

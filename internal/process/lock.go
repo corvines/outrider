@@ -8,6 +8,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/corvines/outrider/internal/manifest"
 )
 
 type LifecycleLock struct {
@@ -47,6 +49,10 @@ func AcquireLifecycleLock(ctx context.Context, path string) (*LifecycleLock, err
 		case <-timer.C:
 		}
 	}
+}
+
+func AcquireUpLock(ctx context.Context, plan manifest.Plan) (*LifecycleLock, error) {
+	return AcquireLifecycleLock(ctx, lifecycleLockPath(plan.State.Run))
 }
 
 func (lock *LifecycleLock) Release() error {

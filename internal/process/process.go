@@ -86,6 +86,9 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		case !IdentityMatches(*record, *observed):
 			return Status{}, identityMismatchError(*record, *observed)
 		default:
+			if !recordMatchesPlan(*record, plan) {
+				return Status{}, planMismatchError(*record, plan)
+			}
 			if _, err := endpoint.WaitForHealth(ctx, plan.HealthEndpoint, healthOptions(options)); err != nil {
 				return Status{}, err
 			}
@@ -202,6 +205,12 @@ func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
 		return Status{
 			Kind: StatusMismatched, PID: record.PID, Endpoint: plan.Endpoint, LogFile: plan.State.Log,
 			Detail: identityMismatchError(*record, *observed).Error(),
+		}, nil
+	}
+	if !recordMatchesPlan(*record, plan) {
+		return Status{
+			Kind: StatusMismatched, PID: record.PID, Endpoint: plan.Endpoint, LogFile: plan.State.Log,
+			Detail: planMismatchError(*record, plan).Error(),
 		}, nil
 	}
 	check := endpoint.CheckHealth(ctx, plan.HealthEndpoint, 2*time.Second)
@@ -353,4 +362,20 @@ func healthFailure(err error, plan manifest.Plan) string {
 
 func elapsedMilliseconds(start time.Time) float64 {
 	return float64(time.Since(start).Microseconds()) / 1000
+}
+
+func recordMatchesPlan(record ProcessRecord, plan manifest.Plan) bool {
+	argv := append([]string{plan.Executable}, plan.Args...)
+	return record.Executable == plan.Executable &&
+		record.ArgvSHA256 == ArgvSHA256(argv) &&
+		record.Preset == plan.Profile.ID &&
+		record.Port == plan.Port &&
+		record.LogFile == plan.State.Log
+}
+
+func planMismatchError(record ProcessRecord, plan manifest.Plan) error {
+	return runnerErrorf(
+		"running PID %d does not match the requested %s plan; run outrider down before starting the new plan",
+		record.PID, plan.Profile.ID,
+	)
 }

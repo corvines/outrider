@@ -173,6 +173,20 @@ func TestTinyModelHasContentHash(t *testing.T) {
 	}
 }
 
+func TestCachedPlanPreservesModelIdentity(t *testing.T) {
+	profile, _ := Get("tiny")
+	plan, err := ResolveCached(profile, ResolveOptions{Root: t.TempDir(), Executable: "/fake/llama-server"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Profile.Model.Repo != profile.Model.Repo || plan.Profile.Model.File != profile.Model.File || plan.Profile.Model.Quant != profile.Model.Quant {
+		t.Fatalf("cached model identity = %#v", plan.Profile.Model)
+	}
+	if plan.Profile.Model.LocalPath != plan.State.Model {
+		t.Fatalf("cached local path = %q, model path = %q", plan.Profile.Model.LocalPath, plan.State.Model)
+	}
+}
+
 func containsPair(args []string, flag string, value string) bool {
 	for i := 0; i+1 < len(args); i++ {
 		if args[i] == flag && args[i+1] == value {

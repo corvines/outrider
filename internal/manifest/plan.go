@@ -137,7 +137,7 @@ func ResolveCached(profile Profile, options ResolveOptions) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	profile.Model = Artifact{LocalPath: state.Model, SHA256: profile.Model.SHA256}
+	profile.Model.LocalPath = state.Model
 	return Resolve(profile, options)
 }
 

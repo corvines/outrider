@@ -150,6 +150,29 @@ func TestStartCleansUpWhenHealthFails(t *testing.T) {
 	}
 }
 
+func TestStartRefusesOwnedProcessWithDifferentPlan(t *testing.T) {
+	plan := fakeServerPlan(t, false)
+	t.Cleanup(func() { _, _ = Stop(context.Background(), plan, StopOptions{}) })
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed := plan
+	changed.Args = append(append([]string(nil), plan.Args...), "--changed-policy")
+	if _, err := Start(context.Background(), changed, StartOptions{}); err == nil || !strings.Contains(err.Error(), "does not match the requested") {
+		t.Fatalf("start error = %v", err)
+	}
+	status, err := GetStatus(context.Background(), changed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Kind != StatusMismatched || status.PID != started.PID {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
 func TestLifecycleLockWaitHonorsCancellation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run", "up.lock")
 	first, err := AcquireLifecycleLock(context.Background(), path)

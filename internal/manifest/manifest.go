@@ -299,8 +299,14 @@ func validateArtifact(field string, artifact Artifact) error {
 		if strings.ContainsRune(artifact.LocalPath, '\x00') {
 			return manifestError(field+".localPath", "contains a NUL byte")
 		}
-		if artifact.Repo != "" || artifact.File != "" || artifact.Quant != "" {
-			return manifestError(field, "localPath cannot be combined with repo, file, or quant")
+		remoteFields := 0
+		for _, value := range []string{artifact.Repo, artifact.File, artifact.Quant} {
+			if value != "" {
+				remoteFields++
+			}
+		}
+		if remoteFields != 0 && remoteFields != 3 {
+			return manifestError(field, "localPath may only be combined with a complete remote reference")
 		}
 		return nil
 	}

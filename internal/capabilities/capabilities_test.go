@@ -3,6 +3,7 @@ package capabilities
 import (
 	"context"
 	"errors"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
@@ -84,5 +85,31 @@ func TestSpeculationRequiresValueAndAdvertisedType(t *testing.T) {
 	var capabilityErr *CapabilityError
 	if !errors.As(err, &capabilityErr) {
 		t.Fatalf("unknown type error = %v", err)
+	}
+}
+
+func TestPinnedServerSupportsProfiles(t *testing.T) {
+	executable := os.Getenv("OUTRIDER_TEST_LLAMA_SERVER")
+	if executable == "" {
+		t.Skip("OUTRIDER_TEST_LLAMA_SERVER is not set")
+	}
+	got, err := Probe(context.Background(), executable, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"tiny", "qwen35b-mtp"} {
+		profile, err := manifest.Get(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan, err := manifest.Resolve(profile, manifest.ResolveOptions{
+			Root: t.TempDir(), Executable: executable,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := Assert(got, plan.Args); err != nil {
+			t.Fatalf("profile %s: %v", id, err)
+		}
 	}
 }

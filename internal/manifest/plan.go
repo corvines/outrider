@@ -22,7 +22,12 @@ func BuildServerArgs(profile Profile, options BuildOptions) ([]string, error) {
 			return nil, err
 		}
 	}
-	args := []string{"--host", DefaultHost, "--port", strconv.Itoa(options.Port)}
+	args := []string{
+		"--host", DefaultHost,
+		"--port", strconv.Itoa(options.Port),
+		"--cors-origins", DeniedBrowserOrigin,
+		"--no-cors-credentials",
+	}
 	modelArgs, err := artifactArgs(profile.Model, cwd, "--model")
 	if err != nil {
 		return nil, err

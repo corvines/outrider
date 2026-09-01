@@ -11,8 +11,9 @@ import (
 )
 
 const (
-	DefaultHost = "127.0.0.1"
-	DefaultPort = 11435
+	DefaultHost         = "127.0.0.1"
+	DefaultPort         = 11435
+	DeniedBrowserOrigin = "https://outrider.invalid"
 )
 
 var LlamaRelease = Release{
@@ -30,6 +31,7 @@ var protectedFlags = map[string]struct{}{
 	"--ctx-size": {}, "-c": {}, "--n-gpu-layers": {},
 	"--gpu-layers": {}, "-ngl": {}, "--fit": {}, "--flash-attn": {},
 	"--spec-type": {}, "--spec-draft-n-max": {}, "--spec-draft-model": {}, "-md": {},
+	"--cors-origins": {}, "--cors-credentials": {}, "--no-cors-credentials": {},
 }
 
 //go:embed profiles.json

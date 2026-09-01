@@ -42,9 +42,14 @@ func TestTinyArguments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"--host", "127.0.0.1", "--port", "23456", "--hf-repo", "ggml-org/Qwen3.5-0.8B-GGUF:Q4_0", "--hf-file", "Qwen3.5-0.8B-Q4_0.gguf", "--ctx-size", "4096"}
-	if !reflect.DeepEqual(args[:10], want) {
-		t.Fatalf("argument prefix = %v", args[:10])
+	want := []string{
+		"--host", "127.0.0.1", "--port", "23456",
+		"--cors-origins", "https://outrider.invalid", "--no-cors-credentials",
+		"--hf-repo", "ggml-org/Qwen3.5-0.8B-GGUF:Q4_0", "--hf-file", "Qwen3.5-0.8B-Q4_0.gguf",
+		"--ctx-size", "4096",
+	}
+	if !reflect.DeepEqual(args[:len(want)], want) {
+		t.Fatalf("argument prefix = %v", args[:len(want)])
 	}
 	if !containsPair(args, "--spec-type", "none") {
 		t.Fatalf("missing disabled speculation: %v", args)
@@ -118,7 +123,9 @@ func TestLocalModelAndExtraArguments(t *testing.T) {
 
 func TestRejectsUnsafeExtraArguments(t *testing.T) {
 	profile, _ := Get("tiny")
-	for _, arg := range []string{"--port=9999", "--model", "bad\narg"} {
+	for _, arg := range []string{
+		"--port=9999", "--model", "--cors-origins=*", "--cors-credentials", "bad\narg",
+	} {
 		profile.ExtraArgs = []string{arg}
 		if err := Validate(profile); err == nil {
 			t.Fatalf("accepted extra argument %q", arg)

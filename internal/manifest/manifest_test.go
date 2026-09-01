@@ -1,0 +1,173 @@
+package manifest
+
+import (
+	"errors"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestProfiles(t *testing.T) {
+	profiles, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{profiles[0].ID, profiles[1].ID}
+	if !reflect.DeepEqual(ids, []string{"tiny", "qwen35b-mtp"}) {
+		t.Fatalf("profile ids = %v", ids)
+	}
+	tiny, err := Get("tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tiny.Model.Repo != "ggml-org/Qwen3.5-0.8B-GGUF" || tiny.Model.File != "Qwen3.5-0.8B-Q4_0.gguf" {
+		t.Fatalf("unexpected tiny model: %#v", tiny.Model)
+	}
+	large, err := Get("qwen35b-mtp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if large.Context.Size != 32768 {
+		t.Fatalf("large context = %d", large.Context.Size)
+	}
+	if _, err := Get("missing"); err == nil {
+		t.Fatal("missing profile did not fail")
+	}
+}
+
+func TestTinyArguments(t *testing.T) {
+	profile, _ := Get("tiny")
+	args, err := BuildServerArgs(profile, BuildOptions{Port: 23456})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"--host", "127.0.0.1", "--port", "23456", "--hf-repo", "ggml-org/Qwen3.5-0.8B-GGUF:Q4_0", "--hf-file", "Qwen3.5-0.8B-Q4_0.gguf", "--ctx-size", "4096"}
+	if !reflect.DeepEqual(args[:10], want) {
+		t.Fatalf("argument prefix = %v", args[:10])
+	}
+	if !containsPair(args, "--spec-type", "none") {
+		t.Fatalf("missing disabled speculation: %v", args)
+	}
+	for flag, value := range map[string]string{
+		"--n-gpu-layers":        "all",
+		"--flash-attn":          "on",
+		"--cache-ram":           "512",
+		"--ctx-checkpoints":     "0",
+		"--checkpoint-min-step": "8192",
+	} {
+		if !containsPair(args, flag, value) {
+			t.Fatalf("missing %s %s: %v", flag, value, args)
+		}
+	}
+}
+
+func TestMTPPlan(t *testing.T) {
+	profile, _ := Get("qwen35b-mtp")
+	root := t.TempDir()
+	port := 22001
+	plan, err := Resolve(profile, ResolveOptions{Root: root, Port: &port})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plan.Endpoint != "http://127.0.0.1:22001" {
+		t.Fatalf("endpoint = %q", plan.Endpoint)
+	}
+	wantExecutable := filepath.Join(root, "llama.cpp", LlamaRelease.Tag, LlamaRelease.Directory, "llama-server")
+	if plan.Executable != wantExecutable {
+		t.Fatalf("executable = %q, want %q", plan.Executable, wantExecutable)
+	}
+	if !containsPair(plan.Args, "--spec-type", "draft-mtp") || !containsPair(plan.Args, "--spec-draft-n-max", "2") {
+		t.Fatalf("missing MTP arguments: %v", plan.Args)
+	}
+	for flag, value := range map[string]string{
+		"--cache-ram":        "0",
+		"--spec-draft-n-min": "0",
+		"--spec-draft-p-min": "0",
+	} {
+		if !containsPair(plan.Args, flag, value) {
+			t.Fatalf("missing %s %s: %v", flag, value, plan.Args)
+		}
+	}
+	for _, arg := range plan.Args {
+		if arg == "--draft" {
+			t.Fatalf("legacy draft flag present: %v", plan.Args)
+		}
+	}
+}
+
+func TestLocalModelAndExtraArguments(t *testing.T) {
+	profile, _ := Get("tiny")
+	profile.Model = Artifact{LocalPath: "models/local.gguf"}
+	profile.ExtraArgs = []string{"--verbose", "--alias=small local"}
+	cwd := t.TempDir()
+	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort, CWD: cwd})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsPair(args, "--model", filepath.Join(cwd, "models/local.gguf")) {
+		t.Fatalf("local model was not resolved: %v", args)
+	}
+	if !reflect.DeepEqual(args[len(args)-2:], profile.ExtraArgs) {
+		t.Fatalf("extra arguments changed: %v", args[len(args)-2:])
+	}
+}
+
+func TestRejectsUnsafeExtraArguments(t *testing.T) {
+	profile, _ := Get("tiny")
+	for _, arg := range []string{"--port=9999", "--model", "bad\narg"} {
+		profile.ExtraArgs = []string{arg}
+		if err := Validate(profile); err == nil {
+			t.Fatalf("accepted extra argument %q", arg)
+		}
+	}
+}
+
+func TestRejectsIncompleteDraftArtifact(t *testing.T) {
+	profile, _ := Get("tiny")
+	profile.Speculation = Speculation{Mode: "dflash", Tokens: 2, Draft: &Artifact{Repo: "example/model"}}
+	if err := Validate(profile); err == nil {
+		t.Fatal("accepted incomplete draft artifact")
+	}
+}
+
+func TestRejectsInvalidPorts(t *testing.T) {
+	profile, _ := Get("tiny")
+	for _, port := range []int{0, 65536} {
+		if _, err := BuildServerArgs(profile, BuildOptions{Port: port}); err == nil {
+			t.Fatalf("accepted port %d", port)
+		}
+	}
+}
+
+func TestReturnsManifestError(t *testing.T) {
+	profile, _ := Get("tiny")
+	profile.Context.Size = 0
+	err := Validate(profile)
+	var target *ManifestError
+	if !errors.As(err, &target) {
+		t.Fatalf("error type = %T", err)
+	}
+	if !strings.Contains(target.Error(), "context") {
+		t.Fatalf("error = %q", target.Error())
+	}
+}
+
+func TestTinyModelHasContentHash(t *testing.T) {
+	profile, err := Get("tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.Model.SHA256 != "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf" {
+		t.Fatalf("tiny model hash = %q", profile.Model.SHA256)
+	}
+}
+
+func containsPair(args []string, flag string, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}

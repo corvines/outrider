@@ -1,0 +1,74 @@
+[
+  {
+    "id": "tiny",
+    "description": "Qwen3.5 0.8B official Q4_0 GGUF for the local smoke proof",
+    "model": {
+      "repo": "ggml-org/Qwen3.5-0.8B-GGUF",
+      "file": "Qwen3.5-0.8B-Q4_0.gguf",
+      "quant": "Q4_0",
+      "sha256": "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf"
+    },
+    "context": { "size": 4096, "original": 4096 },
+    "gpuLayers": "all",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "f16", "valueType": "f16", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 512,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.2,
+      "topP": 0.9,
+      "topK": 20,
+      "minP": 0.05,
+      "repeatPenalty": 1.05
+    },
+    "speculation": { "mode": "none" },
+    "extraArgs": []
+  },
+  {
+    "id": "qwen35b-mtp",
+    "description": "Qwen3.6 35B-A3B MTP future-fit manifest; never downloaded by this pass",
+    "model": {
+      "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+      "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
+      "quant": "UD-Q4_K_M"
+    },
+    "context": { "size": 32768, "original": 131072 },
+    "gpuLayers": "auto",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 1024, "microSize": 512, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 32,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a careful, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.6,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0.05,
+      "repeatPenalty": 1.0
+    },
+    "speculation": {
+      "mode": "mtp",
+      "tokens": 2,
+      "minTokens": 0,
+      "minProbability": 0
+    },
+    "extraArgs": []
+  }
+]

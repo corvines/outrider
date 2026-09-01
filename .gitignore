@@ -1,0 +1,21 @@
+# Build output
+/outrider
+/dist/
+*.exe
+*.test
+*.out
+
+# Coverage
+*.cover
+coverage.txt
+
+# Local working notes, never committed.
+AGENTS.local.md
+CLAUDE.md
+
+# Environment
+.env
+.env.*
+
+# macOS
+.DS_Store

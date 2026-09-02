@@ -26,7 +26,7 @@ var LlamaRelease = Release{
 }
 
 var protectedFlags = map[string]struct{}{
-	"--host": {}, "--port": {}, "--model": {}, "-m": {},
+	"--host": {}, "--port": {}, "--alias": {}, "-a": {}, "--model": {}, "-m": {},
 	"--hf-repo": {}, "-hf": {}, "--hf-file": {}, "-hff": {},
 	"--ctx-size": {}, "-c": {}, "--n-gpu-layers": {},
 	"--gpu-layers": {}, "-ngl": {}, "--fit": {}, "--flash-attn": {},
@@ -132,6 +132,7 @@ type Speculation struct {
 
 type Profile struct {
 	ID                string      `json:"id"`
+	Runnable          bool        `json:"runnable"`
 	Description       string      `json:"description"`
 	Model             Artifact    `json:"model"`
 	Context           Context     `json:"context"`

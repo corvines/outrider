@@ -109,11 +109,11 @@ func EnsureModelCached(
 ) (string, error) {
 	allowed := options.AllowPreset
 	if allowed == nil {
-		allowed = func(id string) bool { return id == "tiny" }
+		allowed = func(string) bool { return profile.Runnable }
 	}
 	if !allowed(profile.ID) {
 		return "", runnerErrorf(
-			"refusing to download model for plan-only preset %s; only the tiny live proof is enabled",
+			"refusing to download model for plan-only preset %s",
 			profile.ID,
 		)
 	}

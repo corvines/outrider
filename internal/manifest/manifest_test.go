@@ -13,8 +13,11 @@ func TestProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids := []string{profiles[0].ID, profiles[1].ID}
-	if !reflect.DeepEqual(ids, []string{"tiny", "qwen35b-mtp"}) {
+	ids := make([]string, 0, len(profiles))
+	for _, profile := range profiles {
+		ids = append(ids, profile.ID)
+	}
+	if !reflect.DeepEqual(ids, []string{"tiny", "qwen3-1.7b", "qwen35b-mtp"}) {
 		t.Fatalf("profile ids = %v", ids)
 	}
 	tiny, err := Get("tiny")
@@ -23,6 +26,13 @@ func TestProfiles(t *testing.T) {
 	}
 	if tiny.Model.Repo != "ggml-org/Qwen3.5-0.8B-GGUF" || tiny.Model.File != "Qwen3.5-0.8B-Q4_0.gguf" {
 		t.Fatalf("unexpected tiny model: %#v", tiny.Model)
+	}
+	qwen, err := Get("qwen3-1.7b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !qwen.Runnable || qwen.Context.Size != 32768 || qwen.Model.SHA256 != "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5" {
+		t.Fatalf("unexpected qwen profile: %#v", qwen)
 	}
 	large, err := Get("qwen35b-mtp")
 	if err != nil {
@@ -44,6 +54,7 @@ func TestTinyArguments(t *testing.T) {
 	}
 	want := []string{
 		"--host", "127.0.0.1", "--port", "23456",
+		"--alias", "tiny",
 		"--cors-origins", "https://outrider.invalid", "--no-cors-credentials",
 		"--hf-repo", "ggml-org/Qwen3.5-0.8B-GGUF:Q4_0", "--hf-file", "Qwen3.5-0.8B-Q4_0.gguf",
 		"--ctx-size", "4096",
@@ -104,10 +115,27 @@ func TestMTPPlan(t *testing.T) {
 	}
 }
 
+func TestQwenArguments(t *testing.T) {
+	profile, _ := Get("qwen3-1.7b")
+	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for flag, value := range map[string]string{
+		"--alias":            "qwen3-1.7b",
+		"--ctx-size":         "32768",
+		"--presence-penalty": "1.5",
+	} {
+		if !containsPair(args, flag, value) {
+			t.Fatalf("missing %s %s: %v", flag, value, args)
+		}
+	}
+}
+
 func TestLocalModelAndExtraArguments(t *testing.T) {
 	profile, _ := Get("tiny")
 	profile.Model = Artifact{LocalPath: "models/local.gguf"}
-	profile.ExtraArgs = []string{"--verbose", "--alias=small local"}
+	profile.ExtraArgs = []string{"--verbose", "--log-colors"}
 	cwd := t.TempDir()
 	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort, CWD: cwd})
 	if err != nil {
@@ -124,7 +152,7 @@ func TestLocalModelAndExtraArguments(t *testing.T) {
 func TestRejectsUnsafeExtraArguments(t *testing.T) {
 	profile, _ := Get("tiny")
 	for _, arg := range []string{
-		"--port=9999", "--model", "--cors-origins=*", "--cors-credentials", "bad\narg",
+		"--port=9999", "--alias=other", "--model", "--cors-origins=*", "--cors-credentials", "bad\narg",
 	} {
 		profile.ExtraArgs = []string{arg}
 		if err := Validate(profile); err == nil {

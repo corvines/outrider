@@ -55,17 +55,17 @@ func TestStatusAndDownDoNotPrepareRuntime(t *testing.T) {
 	environment := map[string]string{
 		"OUTRIDER_HOME": t.TempDir(), "LLAMA_SERVER_BIN": "/missing/llama-server",
 	}
-	for _, command := range []string{"status", "down"} {
-		output, err := run(context.Background(), []string{command}, environment)
+	for _, argv := range [][]string{{"status"}, {"down"}, {"status", "qwen3-1.7b"}, {"down", "qwen3-1.7b"}} {
+		output, err := run(context.Background(), argv, environment)
 		if err != nil {
-			t.Fatalf("%s: %v", command, err)
+			t.Fatalf("%v: %v", argv, err)
 		}
 		var status map[string]any
 		if err := json.Unmarshal([]byte(output), &status); err != nil {
 			t.Fatal(err)
 		}
 		if status["kind"] != "stopped" {
-			t.Fatalf("%s status = %#v", command, status)
+			t.Fatalf("%v status = %#v", argv, status)
 		}
 	}
 }
@@ -77,7 +77,7 @@ func TestUsageErrors(t *testing.T) {
 		{"up", "qwen35b-mtp"},
 		{"smoke", "tiny"},
 		{"demo"},
-		{"status", "tiny"},
+		{"status", "tiny", "extra"},
 		{"missing"},
 	} {
 		_, err := run(context.Background(), argv, map[string]string{})

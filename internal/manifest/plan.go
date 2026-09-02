@@ -25,6 +25,7 @@ func BuildServerArgs(profile Profile, options BuildOptions) ([]string, error) {
 	args := []string{
 		"--host", DefaultHost,
 		"--port", strconv.Itoa(options.Port),
+		"--alias", profile.ID,
 		"--cors-origins", DeniedBrowserOrigin,
 		"--no-cors-credentials",
 	}

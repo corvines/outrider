@@ -1,6 +1,7 @@
 [
   {
     "id": "tiny",
+    "runnable": true,
     "description": "Qwen3.5 0.8B official Q4_0 GGUF for the local smoke proof",
     "model": {
       "repo": "ggml-org/Qwen3.5-0.8B-GGUF",
@@ -34,7 +35,43 @@
     "extraArgs": []
   },
   {
+    "id": "qwen3-1.7b",
+    "runnable": true,
+    "description": "Qwen3 1.7B Q4_K_M at its native 32K context",
+    "model": {
+      "repo": "ggml-org/Qwen3-1.7B-GGUF",
+      "file": "Qwen3-1.7B-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5"
+    },
+    "context": { "size": 32768, "original": 32768 },
+    "gpuLayers": "all",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "f16", "valueType": "f16", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 512,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.6,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": { "mode": "none" },
+    "extraArgs": ["--presence-penalty", "1.5"]
+  },
+  {
     "id": "qwen35b-mtp",
+    "runnable": false,
     "description": "Qwen3.6 35B-A3B MTP future-fit manifest; never downloaded by this pass",
     "model": {
       "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",

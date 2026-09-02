@@ -92,7 +92,7 @@ func newModelOutput(model manifest.Artifact) modelOutput {
 	}
 }
 
-func newUpOutput(session tinySession) upOutput {
+func newUpOutput(session runSession) upOutput {
 	status := session.Status
 	output := upOutput{
 		Kind: string(status.Kind), PID: status.PID, Endpoint: status.Endpoint,
@@ -113,7 +113,7 @@ func newUpOutput(session tinySession) upOutput {
 }
 
 func newDemoOutput(
-	session tinySession,
+	session runSession,
 	result string,
 	requestMS float64,
 	generationTiming *endpoint.GenerationTiming,

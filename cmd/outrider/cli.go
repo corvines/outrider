@@ -16,27 +16,26 @@ import (
 
 const usage = `outrider: loopback llama.cpp runner
 
-  outrider plan tiny
-  outrider plan qwen35b-mtp
-  outrider up tiny
+  outrider plan <profile>
+  outrider up <profile>
   outrider smoke
-  outrider demo tiny
-  outrider status
-  outrider down
+  outrider demo <profile>
+  outrider status [profile]
+  outrider down [profile]
 
 Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME,
 OUTRIDER_PORT.
 `
 
-type tinyPreparation struct {
+type runPreparation struct {
 	Profile   manifest.Profile
 	Plan      manifest.Plan
 	Baseline  runnerprocess.Status
 	StartedAt time.Time
 }
 
-type tinySession struct {
-	Preparation tinyPreparation
+type runSession struct {
+	Preparation runPreparation
 	Status      runnerprocess.Status
 	ColdStartMS *float64
 	OwnsProcess bool
@@ -58,10 +57,10 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 		}
 		return encodeOutput(newPlanOutput(plan))
 	case "up":
-		if len(argv) != 2 || argv[1] != "tiny" {
-			return "", usageError("up expects the runnable `tiny` preset")
+		if len(argv) != 2 {
+			return "", usageError("up expects exactly one runnable profile id")
 		}
-		session, err := startTinySession(ctx, environment)
+		session, err := startSession(ctx, argv[1], environment)
 		if err != nil {
 			return "", err
 		}
@@ -70,17 +69,24 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 		if len(argv) != 1 {
 			return "", usageError("smoke does not accept a preset id")
 		}
-		return runTinyDemo(ctx, environment)
+		return runDemo(ctx, "tiny", environment)
 	case "demo":
-		if len(argv) != 2 || argv[1] != "tiny" {
-			return "", usageError("demo expects exactly the runnable `tiny` preset")
+		if len(argv) != 2 {
+			return "", usageError("demo expects exactly one runnable profile id")
 		}
-		return runTinyDemo(ctx, environment)
+		return runDemo(ctx, argv[1], environment)
 	case "status", "down":
-		if len(argv) != 1 {
-			return "", usageError(fmt.Sprintf("%s does not accept arguments", command))
+		if len(argv) < 1 || len(argv) > 2 {
+			return "", usageError(fmt.Sprintf("%s accepts at most one profile id", command))
 		}
-		plan, err := resolvePlan("tiny", environment, true, "")
+		profileID := "tiny"
+		if len(argv) == 2 {
+			profileID = argv[1]
+		}
+		if _, err := runnableProfile(profileID); err != nil {
+			return "", err
+		}
+		plan, err := resolvePlan(profileID, environment, true, "")
 		if err != nil {
 			return "", err
 		}
@@ -99,18 +105,18 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 	}
 }
 
-func startTinySession(ctx context.Context, environment map[string]string) (tinySession, error) {
-	profile, err := manifest.Get("tiny")
+func startSession(ctx context.Context, profileID string, environment map[string]string) (runSession, error) {
+	profile, err := runnableProfile(profileID)
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
-	initialPlan, err := resolvePlan("tiny", environment, false, "")
+	initialPlan, err := resolvePlan(profileID, environment, false, "")
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	lock, err := runnerprocess.AcquireUpLock(ctx, initialPlan)
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	defer lock.Release()
 	startedAt := time.Now()
@@ -118,35 +124,35 @@ func startTinySession(ctx context.Context, environment map[string]string) (tinyS
 		StateRoot: initialPlan.State.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"],
 	})
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
-	plan, err := resolvePlan("tiny", environment, true, executable)
+	plan, err := resolvePlan(profileID, environment, true, executable)
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	baseline, err := runnerprocess.GetStatus(ctx, plan)
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	if baseline.Kind == runnerprocess.StatusMismatched {
-		return tinySession{}, runnerErrorf("%s", baseline.Detail)
+		return runSession{}, runnerErrorf("%s", baseline.Detail)
 	}
 	probed, err := capabilities.Probe(ctx, plan.Executable, nil)
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	if err := capabilities.Assert(probed, plan.Args); err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	if _, err := llama.EnsureModelCached(ctx, profile, plan, llama.EnsureModelOptions{}); err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
 	status, err := runnerprocess.StartWithLock(ctx, plan, runnerprocess.StartOptions{}, lock)
 	if err != nil {
-		return tinySession{}, err
+		return runSession{}, err
 	}
-	session := tinySession{
-		Preparation: tinyPreparation{Profile: profile, Plan: plan, Baseline: baseline, StartedAt: startedAt},
+	session := runSession{
+		Preparation: runPreparation{Profile: profile, Plan: plan, Baseline: baseline, StartedAt: startedAt},
 		Status:      status, OwnsProcess: status.Detail == "started",
 	}
 	if session.OwnsProcess {
@@ -156,8 +162,8 @@ func startTinySession(ctx context.Context, environment map[string]string) (tinyS
 	return session, nil
 }
 
-func runTinyDemo(ctx context.Context, environment map[string]string) (string, error) {
-	session, operationErr := startTinySession(ctx, environment)
+func runDemo(ctx context.Context, profileID string, environment map[string]string) (string, error) {
+	session, operationErr := startSession(ctx, profileID, environment)
 	var output string
 	if operationErr == nil {
 		requestStartedAt := time.Now()
@@ -208,7 +214,7 @@ func runTinyDemo(ctx context.Context, environment map[string]string) (string, er
 	return output, nil
 }
 
-func shouldCleanup(session tinySession) bool {
+func shouldCleanup(session runSession) bool {
 	if session.Preparation.Plan.Profile.ID == "" {
 		return false
 	}
@@ -217,6 +223,17 @@ func shouldCleanup(session tinySession) bool {
 	}
 	return session.Preparation.Baseline.Kind == runnerprocess.StatusStopped ||
 		session.Preparation.Baseline.Kind == runnerprocess.StatusStale
+}
+
+func runnableProfile(id string) (manifest.Profile, error) {
+	profile, err := manifest.Get(id)
+	if err != nil {
+		return manifest.Profile{}, err
+	}
+	if !profile.Runnable {
+		return manifest.Profile{}, usageError(fmt.Sprintf("profile %q is plan-only", id))
+	}
+	return profile, nil
 }
 
 func resolvePlan(id string, environment map[string]string, cached bool, executable string) (manifest.Plan, error) {

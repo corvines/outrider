@@ -29,6 +29,45 @@ func TestDiscoverFindsGGUFModelLayers(t *testing.T) {
 	}
 }
 
+func TestDiscoverReadsSamplingParameters(t *testing.T) {
+	root := t.TempDir()
+	writeFixture(t, root, "qwen3", "1.7b", "a", []byte("GGUFmodel"))
+	manifestPath := filepath.Join(root, "manifests", "registry.ollama.ai", "library", "qwen3", "1.7b")
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest manifestFile
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	parameters := []byte(`{"temperature":0.6,"top_k":20,"top_p":0.95,"repeat_penalty":1}`)
+	digest := fmt.Sprintf("%x", sha256.Sum256(parameters))
+	if err := os.WriteFile(filepath.Join(root, "blobs", "sha256-"+digest), parameters, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Layers = append(manifest.Layers, manifestLayer{
+		MediaType: parametersLayerMediaType, Digest: "sha256:" + digest, Size: int64(len(parameters)),
+	})
+	data, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(manifestPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	models, err := Discover(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parametersFound := models[0].Parameters
+	if parametersFound == nil || parametersFound.Temperature == nil || *parametersFound.Temperature != 0.6 ||
+		parametersFound.TopK == nil || *parametersFound.TopK != 20 {
+		t.Fatalf("parameters = %#v", parametersFound)
+	}
+}
+
 func TestDiscoverIgnoresMalformedAndNonGGUFModels(t *testing.T) {
 	root := t.TempDir()
 	writeFixture(t, root, "qwen3.5", "0.8b-mlx", "b", []byte("MLX-data"))

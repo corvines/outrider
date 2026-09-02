@@ -16,14 +16,24 @@ import (
 )
 
 const modelLayerMediaType = "application/vnd.ollama.image.model"
+const parametersLayerMediaType = "application/vnd.ollama.image.params"
 
 var digestPattern = regexp.MustCompile(`^sha256:([0-9a-f]{64})$`)
 
 type Model struct {
-	Name      string `json:"name"`
-	Digest    string `json:"digest"`
-	Path      string `json:"path"`
-	SizeBytes int64  `json:"sizeBytes"`
+	Name       string      `json:"name"`
+	Digest     string      `json:"digest"`
+	Path       string      `json:"path"`
+	SizeBytes  int64       `json:"sizeBytes"`
+	Parameters *Parameters `json:"parameters,omitempty"`
+}
+
+type Parameters struct {
+	Temperature   *float64 `json:"temperature,omitempty"`
+	TopP          *float64 `json:"topP,omitempty"`
+	TopK          *int     `json:"topK,omitempty"`
+	MinP          *float64 `json:"minP,omitempty"`
+	RepeatPenalty *float64 `json:"repeatPenalty,omitempty"`
 }
 
 type VerifyProgress struct {
@@ -210,9 +220,52 @@ func readModel(manifestPath string, blobsRoot string, name string) (Model, bool)
 		if !validGGUF(blobPath, layer.Size) {
 			return Model{}, false
 		}
-		return Model{Name: name, Digest: layer.Digest, Path: blobPath, SizeBytes: layer.Size}, true
+		return Model{
+			Name: name, Digest: layer.Digest, Path: blobPath, SizeBytes: layer.Size,
+			Parameters: readParameters(manifest.Layers, blobsRoot),
+		}, true
 	}
 	return Model{}, false
+}
+
+func readParameters(layers []manifestLayer, blobsRoot string) *Parameters {
+	for _, layer := range layers {
+		if layer.MediaType != parametersLayerMediaType || layer.Size <= 0 || layer.Size > 1<<20 {
+			continue
+		}
+		match := digestPattern.FindStringSubmatch(layer.Digest)
+		if match == nil {
+			return nil
+		}
+		path := filepath.Join(blobsRoot, "sha256-"+match[1])
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() != layer.Size {
+			return nil
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+		var wire struct {
+			Temperature   *float64 `json:"temperature"`
+			TopP          *float64 `json:"top_p"`
+			TopK          *int     `json:"top_k"`
+			MinP          *float64 `json:"min_p"`
+			RepeatPenalty *float64 `json:"repeat_penalty"`
+		}
+		if err := json.Unmarshal(data, &wire); err != nil {
+			return nil
+		}
+		if wire.Temperature == nil && wire.TopP == nil && wire.TopK == nil &&
+			wire.MinP == nil && wire.RepeatPenalty == nil {
+			return nil
+		}
+		return &Parameters{
+			Temperature: wire.Temperature, TopP: wire.TopP, TopK: wire.TopK,
+			MinP: wire.MinP, RepeatPenalty: wire.RepeatPenalty,
+		}
+	}
+	return nil
 }
 
 func validGGUF(path string, expectedSize int64) bool {

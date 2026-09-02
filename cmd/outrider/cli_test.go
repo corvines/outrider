@@ -235,9 +235,16 @@ func TestProfileCacheInspection(t *testing.T) {
 }
 
 func TestDevelopmentProfileUsesCachedBlobWithConservativeContext(t *testing.T) {
+	temperature := 0.6
+	topP := 0.95
+	topK := 20
+	repeatPenalty := 1.0
 	model := ollamacache.Model{
 		Name: "granite4.2:8b", Digest: "sha256:" + strings.Repeat("a", 64),
 		Path: "/cache/blobs/sha256-model", SizeBytes: 1024,
+		Parameters: &ollamacache.Parameters{
+			Temperature: &temperature, TopP: &topP, TopK: &topK, RepeatPenalty: &repeatPenalty,
+		},
 	}
 	profile, err := developmentProfile(model)
 	if err != nil {
@@ -248,6 +255,10 @@ func TestDevelopmentProfileUsesCachedBlobWithConservativeContext(t *testing.T) {
 	}
 	if !containsSequence(profile.ExtraArgs, "--no-webui") {
 		t.Fatalf("extra args = %v", profile.ExtraArgs)
+	}
+	if profile.Sampling.Temperature != temperature || profile.Sampling.TopP != topP ||
+		profile.Sampling.TopK != topK || profile.Sampling.RepeatPenalty != repeatPenalty {
+		t.Fatalf("sampling = %#v", profile.Sampling)
 	}
 }
 

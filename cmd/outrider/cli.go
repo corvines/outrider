@@ -379,6 +379,23 @@ func developmentProfile(model ollamacache.Model) (manifest.Profile, error) {
 	profile.Model = manifest.Artifact{
 		LocalPath: model.Path, SHA256: strings.TrimPrefix(model.Digest, "sha256:"), SizeBytes: model.SizeBytes,
 	}
+	if parameters := model.Parameters; parameters != nil {
+		if parameters.Temperature != nil {
+			profile.Sampling.Temperature = *parameters.Temperature
+		}
+		if parameters.TopP != nil {
+			profile.Sampling.TopP = *parameters.TopP
+		}
+		if parameters.TopK != nil {
+			profile.Sampling.TopK = *parameters.TopK
+		}
+		if parameters.MinP != nil {
+			profile.Sampling.MinP = *parameters.MinP
+		}
+		if parameters.RepeatPenalty != nil {
+			profile.Sampling.RepeatPenalty = *parameters.RepeatPenalty
+		}
+	}
 	profile.ExtraArgs = append(profile.ExtraArgs, "--no-webui")
 	if err := manifest.Validate(profile); err != nil {
 		return manifest.Profile{}, err

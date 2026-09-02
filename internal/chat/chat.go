@@ -17,7 +17,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-const defaultEndpoint = "http://127.0.0.1:11435"
+const (
+	defaultEndpoint = "http://127.0.0.1:11435"
+	roleUser        = "user"
+)
 
 // Run executes the chat TUI.
 func Run(endpoint string) error {
@@ -40,19 +43,10 @@ type RunOptions struct {
 }
 
 type message struct {
-	role      string
-	content   string
-	reasoning string
-}
-
-type modelDef struct {
-	ID            string `json:"id"`
-	Quantization  string `json:"quantization"`
-	ContextWindow int    `json:"context_window"`
-}
-
-type modelsResp struct {
-	Data []modelDef `json:"data"`
+	role        string
+	content     string
+	reasoning   string
+	reasoningMs int
 }
 
 type requestMessage struct {
@@ -110,11 +104,6 @@ func checkEndpoint(endpoint string) error {
 	return nil
 }
 
-type endpointMsg struct {
-	models map[string]modelDef
-	err    error
-}
-
 type streamMsg struct {
 	chunk  string
 	reason string
@@ -128,7 +117,8 @@ type model struct {
 	width, height int
 	endpoint      string
 	textarea      textarea.Model
-	models        map[string]modelDef
+	rows          []modelRow
+	scanPorts     []int
 	currentModel  string
 	quantization  string
 	contextWindow int
@@ -156,9 +146,14 @@ type model struct {
 	lastWallMs           int
 
 	activityPrefix string
+	reasoningStart time.Time
 
-	status1 string
-	status2 string
+	identityLine string
+	activityLine string
+	activityRest string
+	statsLine    string
+
+	picker *picker
 
 	renderedLines []string
 	runningError  error
@@ -169,83 +164,30 @@ func New(opts RunOptions) *model {
 		opts.Endpoint = defaultEndpoint
 	}
 	ta := textarea.New()
-	ta.SetHeight(4)
+	ta.SetHeight(1)
+	ta.Placeholder = "Message the model\u2026"
+	ta.Prompt = ""
 	ta.ShowLineNumbers = false
+	ta.Cursor.Style = styleInputCursor
+	ta.FocusedStyle.Placeholder = styleDim
+	ta.BlurredStyle.Placeholder = styleDim
 	ta.Focus()
 	ta.SetWidth(72)
 	return &model{
 		width:         80,
 		height:        24,
 		endpoint:      opts.Endpoint,
+		scanPorts:     defaultScanPorts,
 		textarea:      ta,
-		models:        map[string]modelDef{},
 		quantization:  "?",
-		contextWindow: 32768,
 		historyIndex:  -1,
 		streamCh:      make(chan streamMsg, 16),
-		showReasoning: true,
+		showReasoning: false,
 	}
 }
 
 func (m *model) Init() tea.Cmd {
-	return fetchModels(m.endpoint)
-}
-
-func fetchModels(endpoint string) tea.Cmd {
-	return func() tea.Msg {
-		res, err := http.Get(endpoint + "/v1/models")
-		if err != nil {
-			return endpointMsg{err: endpointUnreachable{url: endpoint, err: err}}
-		}
-		defer res.Body.Close()
-		if res.StatusCode >= 300 {
-			return endpointMsg{err: endpointUnreachable{url: endpoint, err: fmt.Errorf("status %d", res.StatusCode)}}
-		}
-		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			return endpointMsg{err: endpointUnreachable{url: endpoint, err: err}}
-		}
-		var data modelsResp
-		if err := json.Unmarshal(b, &data); err != nil {
-			return endpointMsg{err: endpointUnreachable{url: endpoint, err: err}}
-		}
-		m := map[string]modelDef{}
-		for _, item := range data.Data {
-			m[item.ID] = item
-		}
-		return endpointMsg{models: m}
-	}
-}
-
-func (m *model) View() string {
-	m.rebuildTranscripts()
-	lines := strings.Split(strings.TrimRight(strings.Join(m.renderedLines, "\n"), "\n"), "\n")
-	vHeight := m.viewHeight()
-	if len(lines) > vHeight {
-		if m.viewOffset < 0 {
-			m.viewOffset = 0
-		}
-		max := len(lines) - vHeight
-		if m.viewOffset > max {
-			m.viewOffset = max
-		}
-		lines = lines[m.viewOffset : m.viewOffset+vHeight]
-	}
-	transcript := strings.Join(lines, "\n")
-	b := strings.Builder{}
-	b.WriteString(transcript)
-	b.WriteString("\n")
-	b.WriteString(m.status1)
-	b.WriteString("\n")
-	b.WriteString(m.status2)
-	b.WriteString("\n")
-	b.WriteString("\n")
-	b.WriteString(indentLines(m.textarea.View(), 2))
-	if m.runningError != nil {
-		b.WriteString("\n")
-		b.WriteString(m.runningError.Error())
-	}
-	return b.String()
+	return tea.Batch(discoverModels(m.endpoint, m.scanPorts), textarea.Blink)
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -253,27 +195,26 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = x.Width
 		m.height = x.Height
-		m.textarea.SetWidth(max(20, m.width-4))
+		m.textarea.SetWidth(m.composerInnerWidth())
 		m.rebuildStatus()
 		return m, nil
-	case endpointMsg:
+	case discoveredMsg:
 		if x.err != nil {
 			m.runningError = x.err
 			m.rebuildStatus()
 			return m, tea.Quit
 		}
-		m.models = x.models
+		m.rows = x.rows
 		if m.currentModel == "" {
-			for name, modelData := range m.models {
-				m.currentModel = name
-				if modelData.Quantization != "" {
-					m.quantization = modelData.Quantization
+			for _, row := range m.rows {
+				if row.endpoint == m.endpoint {
+					m.adoptRow(row)
+					break
 				}
-				if modelData.ContextWindow != 0 {
-					m.contextWindow = modelData.ContextWindow
-				}
-				break
 			}
+		}
+		if m.currentModel == "" && len(m.rows) > 0 {
+			m.adoptRow(m.rows[0])
 		}
 		m.rebuildStatus()
 		return m, nil
@@ -282,10 +223,27 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		return m.applyKey(x)
 	}
-	return m, nil
+
+	var cmds []tea.Cmd
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	cmds = append(cmds, cmd)
+	if m.picker != nil {
+		m.picker.caret, cmd = m.picker.caret.Update(msg)
+		cmds = append(cmds, cmd)
+	}
+	return m, tea.Batch(cmds...)
 }
 
 func (m *model) applyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.picker != nil {
+		return m.applyPickerKey(msg)
+	}
+
+	if msg.Type == tea.KeyCtrlP {
+		return m, m.openPicker()
+	}
+
 	if msg.Type == tea.KeyCtrlC {
 		if strings.TrimSpace(m.textarea.Value()) != "" {
 			m.textarea.SetValue("")
@@ -371,8 +329,9 @@ func (m *model) applyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.textarea, _ = m.textarea.Update(msg)
-	return m, nil
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return m, cmd
 }
 
 func (m *model) submitPrompt(raw string) tea.Cmd {
@@ -405,49 +364,18 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 	}
 
 	if strings.HasPrefix(text, "/model") {
-		parts := strings.Fields(text)
-		if len(parts) == 1 {
-			var names []string
-			for name := range m.models {
-				names = append(names, name)
-			}
-			m.messages = append(m.messages, message{role: "assistant", content: "models " + strings.Join(names, " ")})
-			m.rebuildTranscripts()
-			m.historyIndex = -1
-			m.promptHistory = append(m.promptHistory, text)
-			return fetchModels(m.endpoint)
-		}
-		target := parts[1]
-		if info, ok := m.models[target]; ok {
-			m.currentModel = target
-			if info.Quantization != "" {
-				m.quantization = info.Quantization
-			}
-			if info.ContextWindow != 0 {
-				m.contextWindow = info.ContextWindow
-			}
-			m.activityPrefix = "Loading " + target
-			m.rebuildStatus()
-			m.messages = nil
-			m.turns = 0
-			m.totalOutputTokens = 0
-			m.lastPromptTokens = 0
-			m.promptPerSecond = nil
-			m.predictedPerSecond = nil
-			m.lastWallMs = 0
-			m.activityPrefix = ""
-			m.rebuildStatus()
-			m.rebuildTranscripts()
-			m.rebuildStatus()
-		} else {
-			m.messages = append(m.messages, message{role: "assistant", content: "model not found: " + target})
-			m.rebuildTranscripts()
-		}
 		m.historyIndex = -1
 		m.promptHistory = append(m.promptHistory, text)
-		if len(m.promptHistory) > 100 {
-			m.promptHistory = m.promptHistory[len(m.promptHistory)-100:]
+		parts := strings.Fields(text)
+		if len(parts) == 1 {
+			return tea.Batch(m.openPicker(), discoverModels(m.endpoint, m.scanPorts))
 		}
+		for _, row := range m.rows {
+			if row.id == parts[1] || row.label == parts[1] {
+				return m.selectModel(row)
+			}
+		}
+		m.runningError = fmt.Errorf("model not found: %s", parts[1])
 		return nil
 	}
 
@@ -476,11 +404,8 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 }
 
 func (m *model) streamResponse(prompt string) {
-	if m.currentModel == "" {
-		for name := range m.models {
-			m.currentModel = name
-			break
-		}
+	if m.currentModel == "" && len(m.rows) > 0 {
+		m.adoptRow(m.rows[0])
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -507,7 +432,7 @@ func (m *model) streamResponse(prompt string) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	start := time.Now()
-	res, err := (&http.Client{Timeout: 30 * time.Second}).Do(req)
+	res, err := streamClient.Do(req)
 	if err != nil {
 		m.streamCh <- streamMsg{err: err}
 		return
@@ -540,7 +465,7 @@ func (m *model) streamResponse(prompt string) {
 			if ch.Delta.Content != "" || ch.Delta.Reasoning != "" || ch.Delta.ReasoningText != "" {
 				m.streamCh <- streamMsg{
 					chunk:  ch.Delta.Content,
-					reason: strings.TrimSpace(ch.Delta.Reasoning + ch.Delta.ReasoningText),
+					reason: ch.Delta.Reasoning + ch.Delta.ReasoningText,
 				}
 			}
 		}
@@ -569,6 +494,9 @@ func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 	}
 	if x.chunk != "" {
 		idx := len(m.messages) - 1
+		if m.messages[idx].reasoning != "" && m.messages[idx].reasoningMs == 0 {
+			m.messages[idx].reasoningMs = int(time.Since(m.reasoningStart).Milliseconds())
+		}
 		m.messages[idx].content += x.chunk
 		m.rebuildTranscripts()
 		m.followBottom()
@@ -576,7 +504,10 @@ func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 	}
 	if x.reason != "" {
 		idx := len(m.messages) - 1
-		m.messages[idx].reasoning += x.reason + " "
+		if m.messages[idx].reasoning == "" {
+			m.reasoningStart = time.Now()
+		}
+		m.messages[idx].reasoning += x.reason
 		m.rebuildTranscripts()
 		m.followBottom()
 		return m, func() tea.Msg { return <-m.streamCh }
@@ -618,46 +549,22 @@ func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 	return m, func() tea.Msg { return <-m.streamCh }
 }
 
+// streamClient bounds how long the server may take to answer but never bounds
+// the stream itself, since a local generation can run for minutes. Ctrl+C
+// cancels the request context.
+var streamClient = &http.Client{
+	Transport: &http.Transport{
+		ResponseHeaderTimeout: 30 * time.Second,
+	},
+}
+
 func (m *model) abortStream() {
 	if m.promptCancel != nil {
 		m.promptCancel()
 	}
 }
 
-func (m *model) rebuildTranscripts() {
-	var b strings.Builder
-	for i, msg := range m.messages {
-		if i > 0 {
-			b.WriteString("\n\n│\n\n")
-		}
-		b.WriteString(msg.role)
-		b.WriteString(":\n")
-		if msg.content != "" {
-			b.WriteString("│ ")
-			b.WriteString(strings.ReplaceAll(msg.content, "\n", "\n│ "))
-			b.WriteString("\n")
-		}
-		if msg.role == "assistant" && msg.reasoning != "" {
-			if m.showReasoning {
-				b.WriteString("│ reasoning: ")
-				b.WriteString(msg.reasoning)
-				b.WriteString("\n")
-			} else {
-				b.WriteString("│ ···\n")
-			}
-		}
-	}
-	lines := strings.Split(strings.TrimRight(b.String(), "\n"), "\n")
-	if len(lines) == 1 && lines[0] == "" {
-		m.renderedLines = []string{" "}
-	} else {
-		m.renderedLines = lines
-	}
-}
-
 func (m *model) rebuildStatus() {
-	model := ifEmpty(m.currentModel, "?")
-	quant := ifEmpty(m.quantization, "?")
 	ctxUsed := "?"
 	ctxWindow := "?"
 	if m.contextWindow > 0 {
@@ -674,12 +581,40 @@ func (m *model) rebuildStatus() {
 	if m.promptPerSecond != nil {
 		prefill = fmt.Sprintf("%.1f", *m.promptPerSecond)
 	}
-	prefix := ""
+
+	m.identityLine = fmt.Sprintf("%s · %s · ctx %s/%s",
+		ifEmpty(modelLabel(m.currentModel), "?"), ifEmpty(m.quantization, "?"), ctxUsed, ctxWindow)
+	m.activityRest = fmt.Sprintf(" · %s tok/s · %s prompt tok/s", decode, prefill)
+	m.activityLine = strings.TrimPrefix(m.activityRest, " · ")
 	if m.activityPrefix != "" {
-		prefix = "● " + m.activityPrefix + " · "
+		m.activityLine = "● " + m.activityPrefix + m.activityRest
 	}
-	m.status1 = fmt.Sprintf("%s%s · %s · ctx %s/%s · %s tok/s · %s prompt tok/s", prefix, model, quant, ctxUsed, ctxWindow, decode, prefill)
-	m.status2 = fmt.Sprintf("%s · %s output tokens · %s ms · %s", formatTurns(m.turns), formatInt(m.totalOutputTokens), formatInt(m.lastWallMs), endpointHost(m.endpoint))
+	m.statsLine = fmt.Sprintf("%s · %s · %s output tokens · %s ms",
+		endpointHost(m.endpoint), formatTurns(m.turns), formatInt(m.totalOutputTokens), formatInt(m.lastWallMs))
+}
+
+// selectModel switches the active model and starts the conversation over.
+// adoptRow points the session at one discovered model on its own server.
+func (m *model) adoptRow(row modelRow) {
+	m.endpoint = row.endpoint
+	m.currentModel = row.id
+	m.quantization = row.quant
+	m.contextWindow = row.ctx
+}
+
+func (m *model) selectModel(row modelRow) tea.Cmd {
+	m.adoptRow(row)
+	m.messages = nil
+	m.turns = 0
+	m.totalOutputTokens = 0
+	m.lastPromptTokens = 0
+	m.lastTurnOutputTokens = 0
+	m.promptPerSecond = nil
+	m.predictedPerSecond = nil
+	m.lastWallMs = 0
+	m.runningError = nil
+	m.rebuildStatus()
+	return nil
 }
 
 func (m *model) scrollLines(n int) {
@@ -699,10 +634,7 @@ func (m *model) followBottom() {
 }
 
 func (m *model) viewHeight() int {
-	return max(3, m.height-9)
-}
-
-func (m *model) scrollPageHalf() {
+	return max(3, m.height-m.composerHeight()-3)
 }
 
 func formatTurns(count int) string {

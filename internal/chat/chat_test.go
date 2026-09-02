@@ -51,6 +51,7 @@ func newStreamingServer(chunks []string, includeTimings bool) *httptest.Server {
 
 func runApp(t *testing.T, srv *httptest.Server) *teatest.TestModel {
 	m := New(RunOptions{Endpoint: srv.URL})
+	m.scanPorts = nil
 	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 40))
 }
 

@@ -1,5 +1,6 @@
 # Build output
 /outrider
+/outrider-chat
 /dist/
 *.exe
 *.test
@@ -16,6 +17,9 @@ CLAUDE.md
 # Environment
 .env
 .env.*
+
+# Worktrees
+.worktrees/
 
 # macOS
 .DS_Store

@@ -164,6 +164,43 @@ func TestChatCommand(t *testing.T) {
 	}
 }
 
+func TestUserInstallCommands(t *testing.T) {
+	home := t.TempDir()
+	runnerHome := t.TempDir()
+	source := filepath.Join(t.TempDir(), "outrider")
+	if err := os.WriteFile(source, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{"HOME": home, "OUTRIDER_HOME": runnerHome}
+	output, err := runWithOptions(context.Background(), []string{"install"}, environment, runOptions{
+		CurrentExecutable: func() (string, error) { return source, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var installed installOutput
+	if err := json.Unmarshal([]byte(output), &installed); err != nil {
+		t.Fatal(err)
+	}
+	if installed.Status != "installed" || !strings.HasSuffix(installed.Target, "/.local/bin/outrider") {
+		t.Fatalf("install output = %#v", installed)
+	}
+	output, err = run(context.Background(), []string{"uninstall"}, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var removed installOutput
+	if err := json.Unmarshal([]byte(output), &removed); err != nil {
+		t.Fatal(err)
+	}
+	if removed.Status != "uninstalled" {
+		t.Fatalf("uninstall output = %#v", removed)
+	}
+	if _, err := os.Stat(installed.Target); !os.IsNotExist(err) {
+		t.Fatalf("installed binary remains: %v", err)
+	}
+}
+
 func TestListAndShowProfiles(t *testing.T) {
 	root := t.TempDir()
 	ollamaRoot := t.TempDir()
@@ -283,6 +320,9 @@ func TestUsageErrors(t *testing.T) {
 		{"ls", "extra"},
 		{"show"},
 		{"pull"},
+		{"install", "extra"},
+		{"uninstall", "extra"},
+		{"version", "extra"},
 		{"start", "qwen35b-mtp"},
 		{"use"},
 		{"status", "extra"},

@@ -77,6 +77,20 @@ type useOutput struct {
 	Model    runnerprocess.Status `json:"model"`
 }
 
+type installOutput struct {
+	Status string `json:"status"`
+	Target string `json:"target"`
+	Marker string `json:"marker,omitempty"`
+	SHA256 string `json:"sha256,omitempty"`
+}
+
+type versionOutput struct {
+	Version string `json:"version"`
+	Commit  string `json:"commit,omitempty"`
+	Date    string `json:"date,omitempty"`
+	Dirty   bool   `json:"dirty,omitempty"`
+}
+
 type stateOutput struct {
 	Root          string `json:"root"`
 	Binary        string `json:"binary"`

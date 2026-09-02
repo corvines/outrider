@@ -70,6 +70,16 @@ func TestOutputArgumentsRemovesJSONFlag(t *testing.T) {
 	}
 }
 
+func TestHumanInstallOutputNamesPath(t *testing.T) {
+	text, err := humanOutput(installOutput{Status: "installed", Target: "/Users/example/.local/bin/outrider"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "Installed Outrider") || !strings.Contains(text, "/Users/example/.local/bin") {
+		t.Fatalf("human output = %q", text)
+	}
+}
+
 func TestLogArguments(t *testing.T) {
 	lines, err := parseLogArguments([]string{"--lines", "80"})
 	if err != nil || lines != 80 {

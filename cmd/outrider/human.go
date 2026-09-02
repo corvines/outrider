@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -30,6 +31,27 @@ func humanOutput(value any) (string, error) {
 			"Active model: %s\nVera endpoint: %s/v1\nMemory: %s\nLog: %s\n",
 			output.Profile, output.Endpoint, formatByteCount(output.Model.ResidentBytes), output.Model.LogFile,
 		), nil
+	case installOutput:
+		if output.Status == "uninstalled" {
+			return fmt.Sprintf("Removed Outrider from %s\n", output.Target), nil
+		}
+		return fmt.Sprintf(
+			"Installed Outrider at %s\nAdd %s to PATH if needed.\n",
+			output.Target, filepath.Dir(output.Target),
+		), nil
+	case versionOutput:
+		version := output.Version
+		if output.Commit != "" {
+			commit := output.Commit
+			if len(commit) > 12 {
+				commit = commit[:12]
+			}
+			version += " (" + commit + ")"
+		}
+		if output.Dirty {
+			version += " dirty"
+		}
+		return "outrider " + version + "\n", nil
 	case logOutput:
 		if len(output.Lines) == 0 {
 			return fmt.Sprintf("No log output yet.\nLog: %s\n", output.LogFile), nil

@@ -15,6 +15,7 @@ import (
 	"github.com/corvines/outrider/internal/admission"
 	"github.com/corvines/outrider/internal/chat"
 	"github.com/corvines/outrider/internal/endpoint"
+	"github.com/corvines/outrider/internal/installer"
 	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
 	"github.com/corvines/outrider/internal/ollamacache"
@@ -29,6 +30,9 @@ const usage = `outrider: loopback llama.cpp runner
   outrider models
   outrider show <profile>
   outrider pull <profile>
+  outrider install
+  outrider uninstall
+  outrider version
   outrider start
   outrider use <profile>
   outrider status
@@ -72,9 +76,10 @@ type runSession struct {
 }
 
 type runOptions struct {
-	Progress llama.ProgressFunc
-	Chat     func(string) error
-	Human    bool
+	Progress          llama.ProgressFunc
+	Chat              func(string) error
+	CurrentExecutable func() (string, error)
+	Human             bool
 }
 
 type downloadTracker struct {
@@ -171,6 +176,49 @@ func runWithOptions(
 			return "", err
 		}
 		return formatOutput(output, options.Human)
+	case "install":
+		if len(argv) != 1 {
+			return "", usageError("install does not accept arguments")
+		}
+		executable := options.CurrentExecutable
+		if executable == nil {
+			executable = currentExecutable
+		}
+		source, err := executable()
+		if err != nil {
+			return "", err
+		}
+		marker, err := installer.InstallUser(source, environment["HOME"])
+		if err != nil {
+			return "", err
+		}
+		layout, err := installer.ResolveUserLayout(environment["HOME"])
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(installOutput{
+			Status: "installed", Target: layout.Target, Marker: layout.Marker, SHA256: marker.SHA256,
+		}, options.Human)
+	case "uninstall":
+		if len(argv) != 1 {
+			return "", usageError("uninstall does not accept arguments")
+		}
+		if _, err := stopServices(ctx, environment); err != nil {
+			return "", err
+		}
+		layout, err := installer.ResolveUserLayout(environment["HOME"])
+		if err != nil {
+			return "", err
+		}
+		if err := installer.UninstallUser(environment["HOME"]); err != nil {
+			return "", err
+		}
+		return formatOutput(installOutput{Status: "uninstalled", Target: layout.Target}, options.Human)
+	case "version":
+		if len(argv) != 1 {
+			return "", usageError("version does not accept arguments")
+		}
+		return formatOutput(currentVersion(), options.Human)
 	case "start":
 		if len(argv) != 1 {
 			return "", usageError("start does not accept arguments")

@@ -258,4 +258,7 @@ func TestUnreachableEndpoint(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected unreachable endpoint error")
 	}
+	if !strings.Contains(err.Error(), "outrider serve tiny") {
+		t.Fatalf("unreachable endpoint error = %q", err)
+	}
 }

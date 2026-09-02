@@ -91,7 +91,7 @@ type endpointUnreachable struct {
 }
 
 func (e endpointUnreachable) Error() string {
-	return fmt.Sprintf("cannot reach endpoint %s\nrun `outrider up` first", e.url)
+	return fmt.Sprintf("cannot reach endpoint %s\nrun `outrider serve tiny` first", e.url)
 }
 
 func checkEndpoint(endpoint string) error {

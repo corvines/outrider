@@ -106,6 +106,12 @@ func TestEnsureModelRejectsMismatchedCachedContent(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cached model checksum mismatch") {
 		t.Fatalf("error = %v", err)
 	}
+	if _, statErr := os.Stat(plan.State.Model); !os.IsNotExist(statErr) {
+		t.Fatalf("invalid cache entry remains: %v", statErr)
+	}
+	if _, statErr := os.Stat(plan.State.Model + ".corrupt"); statErr != nil {
+		t.Fatalf("model quarantine is missing: %v", statErr)
+	}
 }
 
 func TestEnsureModelRejectsMismatchedDownloadAndCleansPartial(t *testing.T) {
@@ -212,6 +218,44 @@ func TestEnsureServerRejectsArchiveTraversal(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(root, "escape")); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("escape file stat error = %v", statErr)
+	}
+}
+
+func TestEnsureServerRepairsUnusableInstalledRuntime(t *testing.T) {
+	root := t.TempDir()
+	archive := filepath.Join(t.TempDir(), "runtime.tar.gz")
+	writeRuntimeArchive(t, archive, []tarEntry{
+		{name: "test-release/", kind: tar.TypeDir, mode: 0o755},
+		{name: "test-release/llama-server", body: "#!/bin/sh\nexit 0\n", mode: 0o755},
+	})
+	release := manifest.Release{
+		Tag: "test", Asset: "runtime.tar.gz", Directory: "test-release",
+		SHA256: fileSHA256(t, archive), URL: "https://example.invalid/runtime.tar.gz",
+	}
+	downloads := 0
+	options := EnsureServerOptions{
+		StateRoot: root, Release: release, Platform: Platform{OS: "darwin", Arch: "arm64"},
+		Download: func(_ context.Context, _ string, destination string) error {
+			downloads++
+			return copyFile(archive, destination)
+		},
+	}
+	executable, err := EnsureServer(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(executable); err != nil {
+		t.Fatal(err)
+	}
+	repaired, err := EnsureServer(context.Background(), options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repaired != executable || downloads != 1 {
+		t.Fatalf("repaired = %q, downloads = %d", repaired, downloads)
+	}
+	if _, err := os.Stat(filepath.Dir(executable) + ".corrupt"); err != nil {
+		t.Fatalf("runtime quarantine is missing: %v", err)
 	}
 }
 

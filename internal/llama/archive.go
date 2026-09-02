@@ -54,6 +54,17 @@ func installArchive(
 	return nil
 }
 
+func quarantineReleaseDirectory(releaseDirectory string) error {
+	quarantine := releaseDirectory + ".corrupt"
+	if err := os.RemoveAll(quarantine); err != nil {
+		return runnerError("could not replace prior runtime quarantine", err)
+	}
+	if err := os.Rename(releaseDirectory, quarantine); err != nil {
+		return runnerError("could not quarantine unusable runtime", err)
+	}
+	return nil
+}
+
 func extractArchive(archive string, staging string, expectedDirectory string) (bool, error) {
 	file, err := os.Open(archive)
 	if err != nil {

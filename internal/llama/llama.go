@@ -100,6 +100,13 @@ func EnsureServer(ctx context.Context, options EnsureServerOptions) (string, err
 	if err := ensureArchive(ctx, archive, release, download); err != nil {
 		return "", err
 	}
+	if exists, err := pathExists(releaseDirectory); err != nil {
+		return "", err
+	} else if exists {
+		if err := quarantineReleaseDirectory(releaseDirectory); err != nil {
+			return "", err
+		}
+	}
 	if err := installArchive(archive, releaseParent, releaseDirectory, release); err != nil {
 		return "", err
 	}
@@ -143,10 +150,11 @@ func EnsureModelCached(
 			return "", err
 		}
 		if !valid {
-			return "", runnerErrorf("cached model is not a valid GGUF file: %s", modelPath)
+			cause := runnerErrorf("cached model is not a valid GGUF file: %s", modelPath)
+			return "", quarantineCachedModel(modelPath, cause)
 		}
 		if err := verifySHA256(modelPath, profile.Model.SHA256, "cached model"); err != nil {
-			return "", err
+			return "", quarantineCachedModel(modelPath, err)
 		}
 		return modelPath, nil
 	}
@@ -187,6 +195,17 @@ func EnsureModelCached(
 		return "", runnerError("could not install model in cache", err)
 	}
 	return modelPath, nil
+}
+
+func quarantineCachedModel(modelPath string, cause error) error {
+	quarantine := modelPath + ".corrupt"
+	if err := os.Remove(quarantine); err != nil && !os.IsNotExist(err) {
+		return runnerError("could not replace prior model quarantine", err)
+	}
+	if err := os.Rename(modelPath, quarantine); err != nil {
+		return runnerError("could not quarantine invalid cached model", err)
+	}
+	return runnerErrorf("%v; moved invalid cache entry to %s; retry to download a verified copy", cause, quarantine)
 }
 
 func runnerError(message string, cause error) error {

@@ -2,6 +2,7 @@ package process
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -81,6 +82,9 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		observed := inspectProcess(record.PID)
 		switch {
 		case observed == nil:
+			if processExists(record.PID) {
+				return Status{}, cannotInspectError(record.PID)
+			}
 			if err := os.Remove(plan.State.PID); err != nil && !os.IsNotExist(err) {
 				return Status{}, runnerError("could not remove stale process record", err)
 			}
@@ -112,7 +116,7 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	if err := os.MkdirAll(plan.State.Run, 0o700); err != nil {
 		return Status{}, runnerError("could not create run directory", err)
 	}
-	logFile, err := os.OpenFile(plan.State.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	logFile, err := openRotatingLog(plan.State.Log, serverLogMaxBytes)
 	if err != nil {
 		return Status{}, runnerError("could not open server log", err)
 	}
@@ -127,12 +131,11 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		logFile.Close()
 		return Status{}, runnerError("could not launch llama-server", err)
 	}
-	if err := logFile.Close(); err != nil {
-		_ = command.Process.Kill()
-		return Status{}, runnerError("could not close server log", err)
-	}
 	pid := command.Process.Pid
-	go func() { _ = command.Wait() }()
+	go func() {
+		_ = command.Wait()
+		_ = logFile.Close()
+	}()
 	observed := waitForProcessObservation(ctx, pid)
 	if observed == nil {
 		_ = command.Process.Kill()
@@ -215,6 +218,12 @@ func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
 	}
 	observed := inspectProcess(record.PID)
 	if observed == nil {
+		if processExists(record.PID) {
+			return Status{
+				Kind: StatusMismatched, PID: record.PID, Preset: record.Preset,
+				Endpoint: plan.Endpoint, LogFile: record.LogFile, Detail: cannotInspectError(record.PID).Error(),
+			}, nil
+		}
 		return Status{
 			Kind: StatusStale, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, LogFile: record.LogFile,
 			Detail: fmt.Sprintf("PID file remains but PID %d is no longer running", record.PID),
@@ -255,10 +264,19 @@ func GetActiveStatus(ctx context.Context, state manifest.StatePaths) (Status, er
 	endpointURL := processEndpoint(*record)
 	observed := inspectProcess(record.PID)
 	if observed == nil {
+		if processExists(record.PID) {
+			return Status{
+				Kind: StatusMismatched, PID: record.PID, Preset: record.Preset,
+				Endpoint: endpointURL, LogFile: record.LogFile, Detail: cannotInspectError(record.PID).Error(),
+			}, nil
+		}
+		if err := os.Remove(state.PID); err != nil && !os.IsNotExist(err) {
+			return Status{}, runnerError("could not repair stale active record", err)
+		}
 		return Status{
-			Kind: StatusStale, PID: record.PID, Preset: record.Preset,
+			Kind: StatusStopped, PID: record.PID, Preset: record.Preset,
 			Endpoint: endpointURL, LogFile: record.LogFile,
-			Detail: fmt.Sprintf("active record remains but PID %d is no longer running", record.PID),
+			Detail: fmt.Sprintf("repaired stale active record for PID %d", record.PID),
 		}, nil
 	}
 	if !IdentityMatches(*record, *observed) {
@@ -321,6 +339,9 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 	endpointURL := processEndpoint(record)
 	observed := inspectProcess(record.PID)
 	if observed == nil {
+		if processExists(record.PID) {
+			return Status{}, cannotInspectError(record.PID)
+		}
 		if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
 			return Status{}, runnerError("could not remove stale process record", err)
 		}
@@ -348,6 +369,9 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 		time.Sleep(min(poll, max(time.Millisecond, time.Until(deadline))))
 		observed = inspectProcess(record.PID)
 		if observed == nil {
+			if processExists(record.PID) {
+				return Status{}, cannotInspectError(record.PID)
+			}
 			return stoppedAfterRemovingRecord(recordPath, record, "stopped")
 		}
 		if !IdentityMatches(record, *observed) {
@@ -359,6 +383,9 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 	}
 	observed = inspectProcess(record.PID)
 	if observed == nil {
+		if processExists(record.PID) {
+			return Status{}, cannotInspectError(record.PID)
+		}
 		return stoppedAfterRemovingRecord(recordPath, record, "stopped")
 	}
 	if !IdentityMatches(record, *observed) {
@@ -371,12 +398,18 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 	if inspectProcess(record.PID) != nil {
 		return Status{}, runnerErrorf("PID %d did not stop; leaving %s for inspection", record.PID, recordPath)
 	}
+	if processExists(record.PID) {
+		return Status{}, runnerErrorf("PID %d still exists; leaving %s for inspection", record.PID, recordPath)
+	}
 	return stoppedAfterRemovingRecord(recordPath, record, "stopped with SIGKILL after SIGTERM timeout")
 }
 
 func sendSignal(record ProcessRecord, signal syscall.Signal) error {
 	observed := inspectProcess(record.PID)
 	if observed == nil {
+		if processExists(record.PID) {
+			return cannotInspectError(record.PID)
+		}
 		return nil
 	}
 	if !IdentityMatches(record, *observed) {
@@ -391,12 +424,24 @@ func sendSignal(record ProcessRecord, signal syscall.Signal) error {
 func assertRecordStillOwnsProcess(record ProcessRecord) error {
 	observed := inspectProcess(record.PID)
 	if observed == nil {
+		if processExists(record.PID) {
+			return cannotInspectError(record.PID)
+		}
 		return runnerErrorf("llama-server PID %d exited before the healthy response; see %s", record.PID, record.LogFile)
 	}
 	if !IdentityMatches(record, *observed) {
 		return identityMismatchError(record, *observed)
 	}
 	return nil
+}
+
+func processExists(pid int) bool {
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}
+
+func cannotInspectError(pid int) error {
+	return runnerErrorf("PID %d exists but its process identity cannot be inspected; refusing to modify state", pid)
 }
 
 func waitForProcessObservation(ctx context.Context, pid int) *ObservedProcess {

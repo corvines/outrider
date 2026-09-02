@@ -232,6 +232,65 @@ func TestLifecycleLockWaitHonorsCancellation(t *testing.T) {
 	}
 }
 
+func TestServerLogRotationIsBounded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "server.log")
+	log, err := openRotatingLog(path, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := log.Write([]byte(strings.Repeat("a", 70))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := log.Write([]byte(strings.Repeat("b", 70))); err != nil {
+		t.Fatal(err)
+	}
+	if err := log.Close(); err != nil {
+		t.Fatal(err)
+	}
+	for _, candidate := range []string{path, path + ".1"} {
+		info, err := os.Stat(candidate)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if info.Size() > 100 {
+			t.Fatalf("%s size = %d", candidate, info.Size())
+		}
+	}
+}
+
+func TestStatusRepairsDeadActiveRecord(t *testing.T) {
+	profile, _ := manifest.Get("tiny")
+	plan, err := manifest.ResolveCached(profile, manifest.ResolveOptions{
+		Root: t.TempDir(), Executable: os.Args[0],
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(plan.State.PID), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	argv := []string{os.Args[0], "not-running"}
+	record := ProcessRecord{
+		SchemaVersion: ProcessRecordSchemaVersion, PID: 999999,
+		StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ProcessStartedAt: "not-running",
+		Executable: os.Args[0], Command: "not-running", Argv: argv, ArgvSHA256: ArgvSHA256(argv),
+		Preset: "tiny", Port: plan.Port, LogFile: plan.State.Log,
+	}
+	if err := writeProcessRecord(plan.State.PID, record); err != nil {
+		t.Fatal(err)
+	}
+	status, err := GetActiveStatus(context.Background(), plan.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Kind != StatusStopped || !strings.Contains(status.Detail, "repaired stale") {
+		t.Fatalf("status = %#v", status)
+	}
+	if _, err := os.Stat(plan.State.PID); !os.IsNotExist(err) {
+		t.Fatalf("active record remains: %v", err)
+	}
+}
+
 func TestArgvHashMatchesJSONEncoding(t *testing.T) {
 	const expected = "0473ef2dc0d324ab659d3580c1134e9d812035905c4781fdd6d529b0c6860e13"
 	if got := ArgvSHA256([]string{"a", "b"}); got != expected {

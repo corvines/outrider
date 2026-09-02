@@ -280,6 +280,9 @@ func (m *model) applyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 
 	if msg.Type == tea.KeyEnter {
+		if m.streamActive {
+			return m, nil
+		}
 		return m, m.submitPrompt(m.textarea.Value())
 	}
 

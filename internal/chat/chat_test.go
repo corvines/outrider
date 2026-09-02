@@ -111,8 +111,10 @@ func TestHistoryNavigation(t *testing.T) {
 	tm := runApp(t, srv)
 	sendText(tm, "first")
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	time.Sleep(120 * time.Millisecond)
 	sendText(tm, "second")
 	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+	time.Sleep(120 * time.Millisecond)
 	tm.Send(tea.KeyMsg{Type: tea.KeyUp})
 	tm.Send(tea.KeyMsg{Type: tea.KeyUp})
 	tm.Send(tea.KeyMsg{Type: tea.KeyDown})
@@ -120,6 +122,23 @@ func TestHistoryNavigation(t *testing.T) {
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
 	tm.WaitFinished(t)
+}
+
+func TestEnterDoesNotStartConcurrentTurn(t *testing.T) {
+	m := New(RunOptions{})
+	m.streamActive = true
+	m.textarea.SetValue("second prompt")
+
+	_, command := m.applyKey(tea.KeyMsg{Type: tea.KeyEnter})
+	if command != nil {
+		t.Fatal("enter returned a command while a turn was active")
+	}
+	if len(m.messages) != 0 || m.turns != 0 {
+		t.Fatalf("active session changed: messages=%d turns=%d", len(m.messages), m.turns)
+	}
+	if m.textarea.Value() != "second prompt" {
+		t.Fatalf("draft changed to %q", m.textarea.Value())
+	}
 }
 
 func TestStreamedTurnAndStats(t *testing.T) {

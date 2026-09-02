@@ -76,13 +76,210 @@
     "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
   {
+    "id": "minicpm5-1b",
+    "runnable": true,
+    "description": "MiniCPM5 1B Q4_K_M as a tiny non-thinking helper experiment",
+    "model": {
+      "repo": "openbmb/MiniCPM5-1B-GGUF",
+      "file": "MiniCPM5-1B-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "81b64d05a23b17b34c475f42b3e72fbde62d4b92cc34541f7a8031d0752deafa",
+      "sizeBytes": 688065920
+    },
+    "context": { "size": 32768, "original": 131072 },
+    "gpuLayers": "all",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.7,
+      "topP": 0.8,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.05
+    },
+    "speculation": { "mode": "none" },
+    "persistence": { "enabled": false },
+    "extraArgs": ["--reasoning", "off", "--chat-template-kwargs", "{\"enable_thinking\":false}"],
+    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+  },
+  {
+    "id": "granite4.2-3b",
+    "runnable": true,
+    "description": "Granite 4.2 3B Q4_K_M as a non-thinking helper candidate",
+    "model": {
+      "repo": "ibm-granite/granite-4.2-3b-GGUF",
+      "file": "granite-4.2-3b-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "20e436143017578687f7f848225cc6c6038126c84149192229c7dff6e4e0f427",
+      "sizeBytes": 2244012160
+    },
+    "context": { "size": 32768, "original": 131072 },
+    "gpuLayers": "all",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 1.0,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": { "mode": "none" },
+    "persistence": { "enabled": false },
+    "extraArgs": ["--reasoning", "off"],
+    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+  },
+  {
+    "id": "ling3-tiny",
+    "runnable": true,
+    "description": "Ling 3.0 Tiny Q4_K_M as a responsive short-context helper",
+    "model": {
+      "repo": "inclusionAI/Ling-3.0-tiny-GGUF",
+      "file": "Ling-3.0-tiny-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "246d67d45f5b0c7447ca0ce0bdb8b46b8a47b593c5068635dc16422c051d7be9",
+      "sizeBytes": 4823894944
+    },
+    "context": { "size": 16384, "original": 131072 },
+    "gpuLayers": "auto",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 1.0,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": { "mode": "none" },
+    "persistence": { "enabled": false },
+    "extraArgs": ["--reasoning", "off", "--chat-template-kwargs", "{\"enable_thinking\":false}"],
+    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+  },
+  {
+    "id": "qwen35-4b-helper",
+    "runnable": true,
+    "description": "Qwen3.5 4B Q3_K_M MTP helper at 32K context",
+    "model": {
+      "repo": "unsloth/Qwen3.5-4B-MTP-GGUF",
+      "file": "Qwen3.5-4B-Q3_K_M.gguf",
+      "quant": "Q3_K_M",
+      "sha256": "18df851efa1870eb2df6de0114031bca5a302beeeb1cb98665a6f65903e98cc8",
+      "sizeBytes": 2374564160
+    },
+    "context": { "size": 32768, "original": 262144 },
+    "gpuLayers": "auto",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.3,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": {
+      "mode": "mtp",
+      "tokens": 2,
+      "minTokens": 0,
+      "minProbability": 0
+    },
+    "persistence": { "enabled": false },
+    "extraArgs": ["--chat-template-kwargs", "{\"enable_thinking\":false}"],
+    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+  },
+  {
+    "id": "granite4-h-tiny",
+    "runnable": true,
+    "description": "Granite 4.0 H Tiny Q4_K_M as a fast MoE helper",
+    "model": {
+      "repo": "ibm-granite/granite-4.0-h-tiny-GGUF",
+      "file": "granite-4.0-h-tiny-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "5a38b08c441ae1adbafb1d2b8a7167e0d48734d83af68b268cefea1eec553dcd",
+      "sizeBytes": 4230976352
+    },
+    "context": { "size": 32768, "original": 131072 },
+    "gpuLayers": "auto",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.6,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": { "mode": "none" },
+    "persistence": { "enabled": false },
+    "extraArgs": [],
+    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+  },
+  {
     "id": "qwen35b-mtp",
-    "runnable": false,
-    "description": "Qwen3.6 35B-A3B MTP future-fit manifest; never downloaded by this pass",
+    "runnable": true,
+    "description": "Qwen3.6 35B-A3B MTP primary local agent",
     "model": {
       "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
       "file": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
-      "quant": "UD-Q4_K_M"
+      "quant": "UD-Q4_K_M",
+      "sha256": "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b",
+      "sizeBytes": 22663387424
     },
     "context": { "size": 32768, "original": 131072 },
     "gpuLayers": "auto",
@@ -113,7 +310,7 @@
       "minProbability": 0
     },
     "persistence": { "enabled": false },
-    "extraArgs": [],
-    "admission": {}
+    "extraArgs": ["--chat-template-kwargs", "{\"enable_thinking\":false}"],
+    "admission": { "validatedPhysicalMemoryMiB": 65536 }
   }
 ]

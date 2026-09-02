@@ -28,7 +28,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider verify <profile>
   outrider ls
   outrider show <profile>
-  outrider serve <profile>
+  outrider serve [profile]
   outrider run <profile|cached-model>
   outrider chat [--endpoint URL]
   outrider smoke
@@ -220,8 +220,14 @@ func runWithOptions(
 		}
 		return encodeOutput(contract)
 	case "serve":
+		if len(argv) == 1 {
+			if err := runGateway(ctx, environment, options); err != nil {
+				return "", err
+			}
+			return "", nil
+		}
 		if len(argv) != 2 {
-			return "", usageError("serve expects exactly one runnable profile id")
+			return "", usageError("serve accepts at most one runnable profile id")
 		}
 		session, err := startSession(ctx, argv[1], environment, options)
 		if err != nil {

@@ -166,7 +166,7 @@ func TestListAndShowProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Profiles) != 3 {
+	if len(list.Profiles) != 8 {
 		t.Fatalf("profiles = %#v", list.Profiles)
 	}
 	if list.Profiles[0].Cache.State != "missing" {
@@ -184,7 +184,7 @@ func TestListAndShowProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(showJSON), &detail); err != nil {
 		t.Fatal(err)
 	}
-	if detail.Profile.ID != "qwen35b-mtp" || detail.Profile.Runnable || detail.Profile.Speculation.Mode != "mtp" {
+	if detail.Profile.ID != "qwen35b-mtp" || !detail.Profile.Runnable || detail.Profile.Speculation.Mode != "mtp" {
 		t.Fatalf("profile detail = %#v", detail)
 	}
 }
@@ -273,7 +273,7 @@ func TestUsageErrors(t *testing.T) {
 		{"run"},
 		{"chat", "unexpected"},
 		{"chat", "--missing"},
-		{"serve", "qwen35b-mtp"},
+		{"serve", "tiny", "extra"},
 		{"smoke", "tiny"},
 		{"demo"},
 		{"ps", "tiny"},

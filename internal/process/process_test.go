@@ -30,6 +30,9 @@ func TestStartIsIdempotentAndStopsServer(t *testing.T) {
 	if started.Kind != StatusRunning || started.Health == nil || !*started.Health {
 		t.Fatalf("started = %#v", started)
 	}
+	if info, err := os.Stat(plan.State.Slots); err != nil || !info.IsDir() {
+		t.Fatalf("slot cache directory = %#v, %v", info, err)
+	}
 	status, err := GetStatus(ctx, plan)
 	if err != nil {
 		t.Fatal(err)

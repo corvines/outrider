@@ -116,6 +116,9 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	if err := os.MkdirAll(plan.State.Run, 0o700); err != nil {
 		return Status{}, runnerError("could not create run directory", err)
 	}
+	if err := os.MkdirAll(plan.State.Slots, 0o700); err != nil {
+		return Status{}, runnerError("could not create slot cache directory", err)
+	}
 	logFile, err := openRotatingLog(plan.State.Log, serverLogMaxBytes)
 	if err != nil {
 		return Status{}, runnerError("could not open server log", err)

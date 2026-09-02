@@ -18,7 +18,9 @@ func TestProfiles(t *testing.T) {
 	for _, profile := range profiles {
 		ids = append(ids, profile.ID)
 	}
-	if !reflect.DeepEqual(ids, []string{"tiny", "qwen3-1.7b", "qwen35b-mtp"}) {
+	if !reflect.DeepEqual(ids, []string{
+		"tiny", "qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp",
+	}) {
 		t.Fatalf("profile ids = %v", ids)
 	}
 	tiny, err := Get("tiny")
@@ -45,7 +47,7 @@ func TestProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if large.Context.Size != 32768 {
+	if !large.Runnable || large.Context.Size != 32768 {
 		t.Fatalf("large context = %d", large.Context.Size)
 	}
 	if large.Persistence.Enabled {

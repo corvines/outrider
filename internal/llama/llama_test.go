@@ -137,6 +137,7 @@ func TestEnsureModelRejectsMismatchedDownloadAndCleansPartial(t *testing.T) {
 func TestEnsureModelRefusesPlanOnlyProfile(t *testing.T) {
 	root := t.TempDir()
 	profile, _ := manifest.Get("qwen35b-mtp")
+	profile.Runnable = false
 	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: root, Executable: "/fake/llama-server"})
 	if err != nil {
 		t.Fatal(err)

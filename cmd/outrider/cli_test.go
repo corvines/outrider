@@ -96,11 +96,11 @@ func TestBlockedAdmissionDoesNotPrepareRuntimeOrModel(t *testing.T) {
 	}
 }
 
-func TestStatusAndDownDoNotPrepareRuntime(t *testing.T) {
+func TestProcessCommandsDoNotPrepareRuntime(t *testing.T) {
 	environment := map[string]string{
 		"OUTRIDER_HOME": t.TempDir(), "LLAMA_SERVER_BIN": "/missing/llama-server",
 	}
-	for _, argv := range [][]string{{"status"}, {"down"}} {
+	for _, argv := range [][]string{{"ps"}, {"stop"}, {"status"}, {"down"}} {
 		output, err := run(context.Background(), argv, environment)
 		if err != nil {
 			t.Fatalf("%v: %v", argv, err)
@@ -115,18 +115,34 @@ func TestStatusAndDownDoNotPrepareRuntime(t *testing.T) {
 	}
 }
 
+func TestLifecycleCommandAliases(t *testing.T) {
+	tests := map[string]string{
+		"serve":  "serve",
+		"up":     "serve",
+		"ps":     "ps",
+		"status": "ps",
+		"stop":   "stop",
+		"down":   "stop",
+	}
+	for command, want := range tests {
+		if got := canonicalCommand(command); got != want {
+			t.Fatalf("canonicalCommand(%q) = %q, want %q", command, got, want)
+		}
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	for _, argv := range [][]string{
 		nil,
 		{"plan"},
 		{"check"},
 		{"verify"},
-		{"up", "qwen35b-mtp"},
+		{"serve", "qwen35b-mtp"},
 		{"smoke", "tiny"},
 		{"demo"},
-		{"status", "tiny"},
-		{"down", "qwen3-1.7b"},
-		{"status", "tiny", "extra"},
+		{"ps", "tiny"},
+		{"stop", "qwen3-1.7b"},
+		{"ps", "tiny", "extra"},
 		{"missing"},
 	} {
 		_, err := run(context.Background(), argv, map[string]string{})

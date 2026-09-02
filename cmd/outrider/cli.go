@@ -19,11 +19,13 @@ const usage = `outrider: loopback llama.cpp runner
   outrider plan <profile>
   outrider check <profile>
   outrider verify <profile>
-  outrider up <profile>
+  outrider serve <profile>
   outrider smoke
   outrider demo <profile>
-  outrider status
-  outrider down
+  outrider ps
+  outrider stop
+
+Compatibility aliases: up = serve, status = ps, down = stop.
 
 Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME,
 OUTRIDER_PORT.
@@ -90,6 +92,7 @@ func runWithOptions(
 	if len(argv) > 0 {
 		command = argv[0]
 	}
+	command = canonicalCommand(command)
 	switch command {
 	case "plan":
 		if len(argv) != 2 {
@@ -143,9 +146,9 @@ func runWithOptions(
 			return "", err
 		}
 		return encodeOutput(contract)
-	case "up":
+	case "serve":
 		if len(argv) != 2 {
-			return "", usageError("up expects exactly one runnable profile id")
+			return "", usageError("serve expects exactly one runnable profile id")
 		}
 		session, err := startSession(ctx, argv[1], environment, options)
 		if err != nil {
@@ -162,7 +165,7 @@ func runWithOptions(
 			return "", usageError("demo expects exactly one runnable profile id")
 		}
 		return runDemo(ctx, argv[1], environment, options)
-	case "status", "down":
+	case "ps", "stop":
 		if len(argv) != 1 {
 			return "", usageError(fmt.Sprintf("%s does not accept a profile id", command))
 		}
@@ -171,7 +174,7 @@ func runWithOptions(
 			return "", err
 		}
 		var status runnerprocess.Status
-		if command == "status" {
+		if command == "ps" {
 			status, err = runnerprocess.GetActiveStatus(ctx, state)
 		} else {
 			status, err = runnerprocess.StopActive(ctx, state, runnerprocess.StopOptions{})
@@ -182,6 +185,19 @@ func runWithOptions(
 		return encodeOutput(status)
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
+	}
+}
+
+func canonicalCommand(command string) string {
+	switch command {
+	case "up":
+		return "serve"
+	case "status":
+		return "ps"
+	case "down":
+		return "stop"
+	default:
+		return command
 	}
 }
 

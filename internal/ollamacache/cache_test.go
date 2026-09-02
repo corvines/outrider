@@ -1,7 +1,10 @@
 package ollamacache
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +66,28 @@ func TestDefaultRootHonorsOverride(t *testing.T) {
 	}
 	if root != "/tmp/ollama-models" {
 		t.Fatalf("root = %q", root)
+	}
+}
+
+func TestVerifyChecksContentDigest(t *testing.T) {
+	content := []byte("GGUFmodel")
+	digest := fmt.Sprintf("%x", sha256.Sum256(content))
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	model := Model{Name: "test:model", Digest: "sha256:" + digest, Path: path, SizeBytes: int64(len(content))}
+	var final VerifyProgress
+	if err := Verify(context.Background(), model, func(progress VerifyProgress) { final = progress }); err != nil {
+		t.Fatal(err)
+	}
+	if !final.Done || final.Verified != int64(len(content)) {
+		t.Fatalf("progress = %#v", final)
+	}
+
+	model.Digest = "sha256:" + repeat("f", 64)
+	if err := Verify(context.Background(), model, nil); err == nil {
+		t.Fatal("digest mismatch was accepted")
 	}
 }
 

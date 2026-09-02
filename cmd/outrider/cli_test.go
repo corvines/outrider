@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/corvines/outrider/internal/manifest"
+	"github.com/corvines/outrider/internal/ollamacache"
 )
 
 func TestPlanPreservesWireShape(t *testing.T) {
@@ -230,6 +231,23 @@ func TestProfileCacheInspection(t *testing.T) {
 	}
 	if cache.State != "present" || cache.SizeBytes != profile.Model.SizeBytes {
 		t.Fatalf("cache = %#v", cache)
+	}
+}
+
+func TestDevelopmentProfileUsesCachedBlobWithConservativeContext(t *testing.T) {
+	model := ollamacache.Model{
+		Name: "granite4.2:8b", Digest: "sha256:" + strings.Repeat("a", 64),
+		Path: "/cache/blobs/sha256-model", SizeBytes: 1024,
+	}
+	profile, err := developmentProfile(model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.ID != model.Name || profile.Model.LocalPath != model.Path || profile.Context.Size != 4096 {
+		t.Fatalf("profile = %#v", profile)
+	}
+	if !containsSequence(profile.ExtraArgs, "--no-webui") {
+		t.Fatalf("extra args = %v", profile.ExtraArgs)
 	}
 }
 

@@ -6,7 +6,10 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/corvines/outrider/internal/admission"
@@ -26,7 +29,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider ls
   outrider show <profile>
   outrider serve <profile>
-  outrider run <profile>
+  outrider run <profile|cached-model>
   outrider chat [--endpoint URL]
   outrider smoke
   outrider demo <profile>
@@ -36,7 +39,9 @@ const usage = `outrider: loopback llama.cpp runner
 Compatibility aliases: up = serve, status = ps, down = stop.
 
 Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME,
-OUTRIDER_PORT.
+OUTRIDER_PORT, OLLAMA_MODELS.
+
+Cached-model runs read local Ollama GGUF files but do not start Ollama.
 `
 
 type runPreparation struct {
@@ -225,7 +230,7 @@ func runWithOptions(
 		return encodeOutput(newUpOutput(session))
 	case "run":
 		if len(argv) != 2 {
-			return "", usageError("run expects exactly one runnable profile id")
+			return "", usageError("run expects exactly one profile or development model name")
 		}
 		return runInteractive(ctx, argv[1], environment, options)
 	case "smoke":
@@ -267,7 +272,14 @@ func runInteractive(
 	environment map[string]string,
 	options runOptions,
 ) (string, error) {
-	session, operationErr := startSession(ctx, profileID, environment, options)
+	_, nativeErr := manifest.Get(profileID)
+	var session runSession
+	var operationErr error
+	if nativeErr == nil {
+		session, operationErr = startSession(ctx, profileID, environment, options)
+	} else {
+		session, operationErr = startDevelopmentSession(ctx, profileID, environment, options)
+	}
 	if operationErr == nil {
 		runChat := options.Chat
 		if runChat == nil {
@@ -283,6 +295,119 @@ func runInteractive(
 		return "", operationErr
 	}
 	return "", cleanupErr
+}
+
+func startDevelopmentSession(
+	ctx context.Context,
+	name string,
+	environment map[string]string,
+	options runOptions,
+) (runSession, error) {
+	ollamaRoot, err := ollamacache.DefaultRoot(environment["HOME"], environment["OLLAMA_MODELS"])
+	if err != nil {
+		return runSession{}, err
+	}
+	model, found, err := ollamacache.Find(ollamaRoot, name)
+	if err != nil {
+		return runSession{}, err
+	}
+	if !found {
+		return runSession{}, usageError(fmt.Sprintf("unknown profile or development model %q", name))
+	}
+	profile, err := developmentProfile(model)
+	if err != nil {
+		return runSession{}, err
+	}
+	baseState, err := activeState(environment)
+	if err != nil {
+		return runSession{}, err
+	}
+	executable, err := llama.EnsureServer(ctx, llama.EnsureServerOptions{
+		StateRoot: baseState.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"], Progress: options.Progress,
+	})
+	if err != nil {
+		return runSession{}, err
+	}
+	port, err := availableDevelopmentPort()
+	if err != nil {
+		return runSession{}, err
+	}
+	developmentRoot := filepath.Join(baseState.Root, "development")
+	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{
+		Root: developmentRoot, Executable: executable, Port: &port,
+	})
+	if err != nil {
+		return runSession{}, err
+	}
+	startedAt := time.Now()
+	report := admission.Inspect(ctx, profile, plan, false)
+	if report.Blocking() {
+		return runSession{}, &admission.Error{Report: report}
+	}
+	report = admission.WithRuntimeCapabilities(ctx, report, plan, true)
+	if report.Blocking() {
+		return runSession{}, &admission.Error{Report: report}
+	}
+	if err := ollamacache.Verify(ctx, model, developmentVerifyProgress(options.Progress)); err != nil {
+		return runSession{}, err
+	}
+	status, err := runnerprocess.Start(ctx, plan, runnerprocess.StartOptions{})
+	if err != nil {
+		return runSession{}, err
+	}
+	session := runSession{
+		Preparation: runPreparation{
+			Profile: profile, Plan: plan, Baseline: runnerprocess.Status{Kind: runnerprocess.StatusStopped},
+			Admission: report, StartedAt: startedAt, TotalReadyMS: elapsedMilliseconds(startedAt),
+		},
+		Status: status, OwnsProcess: status.Detail == "started",
+	}
+	if status.Timings != nil {
+		coldStart := status.Timings.TimeToHealthMS
+		session.ColdStartMS = &coldStart
+	}
+	return session, nil
+}
+
+func developmentProfile(model ollamacache.Model) (manifest.Profile, error) {
+	profile, err := manifest.Get("tiny")
+	if err != nil {
+		return manifest.Profile{}, err
+	}
+	profile.ID = model.Name
+	profile.Description = "Development model from the local Ollama cache"
+	profile.Model = manifest.Artifact{
+		LocalPath: model.Path, SHA256: strings.TrimPrefix(model.Digest, "sha256:"), SizeBytes: model.SizeBytes,
+	}
+	profile.ExtraArgs = append(profile.ExtraArgs, "--no-webui")
+	if err := manifest.Validate(profile); err != nil {
+		return manifest.Profile{}, err
+	}
+	return profile, nil
+}
+
+func availableDevelopmentPort() (int, error) {
+	listener, err := net.Listen("tcp", net.JoinHostPort(manifest.DefaultHost, "0"))
+	if err != nil {
+		return 0, runnerErrorf("could not reserve a development port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		return 0, runnerErrorf("could not release the development port probe: %v", err)
+	}
+	return port, nil
+}
+
+func developmentVerifyProgress(forward llama.ProgressFunc) ollamacache.VerifyProgressFunc {
+	if forward == nil {
+		return nil
+	}
+	return func(progress ollamacache.VerifyProgress) {
+		forward(llama.DownloadProgress{
+			Name: "verify " + progress.Name, Downloaded: progress.Verified, Total: progress.Total,
+			BytesPerSecond: progress.BytesPerSecond, ETA: progress.ETA, Done: progress.Done,
+		})
+	}
 }
 
 func parseChatArguments(arguments []string) (string, error) {

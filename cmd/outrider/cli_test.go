@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
+	"os"
 	"strings"
 	"testing"
 
@@ -51,6 +54,48 @@ func TestPlanIncludesMTPArguments(t *testing.T) {
 	}
 }
 
+func TestCheckReturnsStructuredAdmissionWithoutPreparingRuntime(t *testing.T) {
+	root := t.TempDir()
+	output, err := run(context.Background(), []string{"check", "tiny"}, map[string]string{
+		"OUTRIDER_HOME": root, "LLAMA_SERVER_BIN": "/missing/llama-server",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var report struct {
+		Profile string `json:"profile"`
+		Class   string `json:"class"`
+	}
+	if err := json.Unmarshal([]byte(output), &report); err != nil {
+		t.Fatal(err)
+	}
+	if report.Profile != "tiny" || report.Class == "" {
+		t.Fatalf("report = %#v", report)
+	}
+}
+
+func TestBlockedAdmissionDoesNotPrepareRuntimeOrModel(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	root := t.TempDir()
+	port := listener.Addr().(*net.TCPAddr).Port
+	_, err = run(context.Background(), []string{"up", "tiny"}, map[string]string{
+		"OUTRIDER_HOME": root, "LLAMA_SERVER_BIN": "/missing/llama-server",
+		"OUTRIDER_PORT": fmt.Sprintf("%d", port),
+	})
+	if err == nil || !strings.Contains(err.Error(), "admission port") {
+		t.Fatalf("error = %v", err)
+	}
+	for _, path := range []string{"models", "downloads", "llama.cpp"} {
+		if _, statErr := os.Stat(root + "/" + path); !os.IsNotExist(statErr) {
+			t.Fatalf("%s exists after blocked admission: %v", path, statErr)
+		}
+	}
+}
+
 func TestStatusAndDownDoNotPrepareRuntime(t *testing.T) {
 	environment := map[string]string{
 		"OUTRIDER_HOME": t.TempDir(), "LLAMA_SERVER_BIN": "/missing/llama-server",
@@ -74,6 +119,7 @@ func TestUsageErrors(t *testing.T) {
 	for _, argv := range [][]string{
 		nil,
 		{"plan"},
+		{"check"},
 		{"up", "qwen35b-mtp"},
 		{"smoke", "tiny"},
 		{"demo"},

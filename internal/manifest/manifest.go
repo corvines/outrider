@@ -23,6 +23,7 @@ var LlamaRelease = Release{
 	Directory: "llama-b10516",
 	SHA256:    "ee3324327d621026ae80c24031670e65fa62a0b23a3a027dbe2f65f240affd30",
 	URL:       "https://github.com/ggml-org/llama.cpp/releases/download/b10516/llama-b10516-bin-macos-arm64.tar.gz",
+	SizeBytes: 11089823,
 }
 
 var protectedFlags = map[string]struct{}{
@@ -44,6 +45,7 @@ type Release struct {
 	Directory string
 	SHA256    string
 	URL       string
+	SizeBytes int64
 }
 
 type ManifestError struct {
@@ -64,6 +66,11 @@ type Artifact struct {
 	Quant     string `json:"quant,omitempty"`
 	LocalPath string `json:"localPath,omitempty"`
 	SHA256    string `json:"sha256,omitempty"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
+}
+
+type Admission struct {
+	ValidatedPhysicalMemoryMiB int `json:"validatedPhysicalMemoryMiB,omitempty"`
 }
 
 type Context struct {
@@ -150,6 +157,7 @@ type Profile struct {
 	Sampling          Sampling    `json:"sampling"`
 	Speculation       Speculation `json:"speculation"`
 	ExtraArgs         []string    `json:"extraArgs"`
+	Admission         Admission   `json:"admission"`
 }
 
 type StatePaths struct {
@@ -233,6 +241,12 @@ func Validate(profile Profile) error {
 	}
 	if err := validateArtifact("model", profile.Model); err != nil {
 		return err
+	}
+	if profile.Runnable && profile.Model.SizeBytes <= 0 {
+		return manifestError("model.sizeBytes", "is required for runnable profiles")
+	}
+	if profile.Runnable && profile.Admission.ValidatedPhysicalMemoryMiB <= 0 {
+		return manifestError("admission.validatedPhysicalMemoryMiB", "is required for runnable profiles")
 	}
 	if profile.Context.Size <= 0 || profile.Context.Original <= 0 {
 		return manifestError("context", "sizes must be positive")

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/corvines/outrider/internal/admission"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/manifest"
 )
@@ -56,6 +57,7 @@ type upOutput struct {
 	Executable string             `json:"executable"`
 	Model      string             `json:"model"`
 	Argv       []string           `json:"argv"`
+	Admission  admission.Report   `json:"admission"`
 }
 
 type demoOutput struct {
@@ -66,6 +68,7 @@ type demoOutput struct {
 	GenerationTimingSource string             `json:"generationTimingSource,omitempty"`
 	LogFile                string             `json:"logFile"`
 	Cleanup                string             `json:"cleanup"`
+	Admission              admission.Report   `json:"admission"`
 }
 
 func newPlanOutput(plan manifest.Plan) planOutput {
@@ -100,7 +103,8 @@ func newUpOutput(session runSession) upOutput {
 		Kind: string(status.Kind), PID: status.PID, Endpoint: status.Endpoint,
 		Health: status.Health, Detail: status.Detail, LogFile: status.LogFile,
 		Executable: session.Preparation.Plan.Executable, Model: session.Preparation.Plan.State.Model,
-		Argv: append([]string{session.Preparation.Plan.Executable}, session.Preparation.Plan.Args...),
+		Argv:      append([]string{session.Preparation.Plan.Executable}, session.Preparation.Plan.Args...),
+		Admission: session.Preparation.Admission,
 	}
 	if status.Timings != nil || session.ColdStartMS != nil {
 		output.Timings = make(map[string]float64)
@@ -135,7 +139,8 @@ func newDemoOutput(
 		Endpoint: session.Preparation.Plan.Endpoint,
 		Model:    newModelOutput(session.Preparation.Plan.Profile.Model),
 		Result:   result, Timings: timings, LogFile: session.Preparation.Plan.State.Log,
-		Cleanup: cleanup,
+		Cleanup:   cleanup,
+		Admission: session.Preparation.Admission,
 	}
 	if generationTiming != nil {
 		output.Timings["generationTokensPerSecond"] = generationTiming.TokensPerSecond

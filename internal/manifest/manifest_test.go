@@ -134,7 +134,7 @@ func TestQwenArguments(t *testing.T) {
 
 func TestLocalModelAndExtraArguments(t *testing.T) {
 	profile, _ := Get("tiny")
-	profile.Model = Artifact{LocalPath: "models/local.gguf"}
+	profile.Model = Artifact{LocalPath: "models/local.gguf", SizeBytes: 1}
 	profile.ExtraArgs = []string{"--verbose", "--log-colors"}
 	cwd := t.TempDir()
 	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort, CWD: cwd})

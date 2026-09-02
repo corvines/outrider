@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/corvines/outrider/internal/admission"
 	"github.com/corvines/outrider/internal/capabilities"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/llama"
@@ -17,6 +18,7 @@ import (
 const usage = `outrider: loopback llama.cpp runner
 
   outrider plan <profile>
+  outrider check <profile>
   outrider up <profile>
   outrider smoke
   outrider demo <profile>
@@ -31,6 +33,7 @@ type runPreparation struct {
 	Profile   manifest.Profile
 	Plan      manifest.Plan
 	Baseline  runnerprocess.Status
+	Admission admission.Report
 	StartedAt time.Time
 }
 
@@ -56,6 +59,24 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 			return "", err
 		}
 		return encodeOutput(newPlanOutput(plan))
+	case "check":
+		if len(argv) != 2 {
+			return "", usageError("check expects exactly one profile id")
+		}
+		profile, err := manifest.Get(argv[1])
+		if err != nil {
+			return "", err
+		}
+		plan, err := resolvePlan(argv[1], environment, true, "")
+		if err != nil {
+			return "", err
+		}
+		status, err := runnerprocess.GetStatus(ctx, plan)
+		if err != nil {
+			return "", err
+		}
+		portOwned := status.Kind == runnerprocess.StatusRunning
+		return encodeOutput(admission.Inspect(ctx, profile, plan, portOwned))
 	case "up":
 		if len(argv) != 2 {
 			return "", usageError("up expects exactly one runnable profile id")
@@ -111,7 +132,7 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	if err != nil {
 		return runSession{}, err
 	}
-	initialPlan, err := resolvePlan(profileID, environment, false, "")
+	initialPlan, err := resolvePlan(profileID, environment, true, "")
 	if err != nil {
 		return runSession{}, err
 	}
@@ -121,6 +142,29 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	}
 	defer lock.Release()
 	startedAt := time.Now()
+	baseline, err := runnerprocess.GetStatus(ctx, initialPlan)
+	if err != nil {
+		return runSession{}, err
+	}
+	if baseline.Kind == runnerprocess.StatusMismatched {
+		return runSession{}, runnerErrorf("%s", baseline.Detail)
+	}
+	report := admission.Inspect(ctx, profile, initialPlan, baseline.Kind == runnerprocess.StatusRunning)
+	if report.Blocking() {
+		return runSession{}, &admission.Error{Report: report}
+	}
+	if baseline.Kind == runnerprocess.StatusRunning {
+		status, err := runnerprocess.StartWithLock(ctx, initialPlan, runnerprocess.StartOptions{}, lock)
+		if err != nil {
+			return runSession{}, err
+		}
+		return runSession{
+			Preparation: runPreparation{
+				Profile: profile, Plan: initialPlan, Baseline: baseline, Admission: report, StartedAt: startedAt,
+			},
+			Status: status,
+		}, nil
+	}
 	executable, err := llama.EnsureServer(ctx, llama.EnsureServerOptions{
 		StateRoot: initialPlan.State.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"],
 	})
@@ -130,13 +174,6 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	plan, err := resolvePlan(profileID, environment, true, executable)
 	if err != nil {
 		return runSession{}, err
-	}
-	baseline, err := runnerprocess.GetStatus(ctx, plan)
-	if err != nil {
-		return runSession{}, err
-	}
-	if baseline.Kind == runnerprocess.StatusMismatched {
-		return runSession{}, runnerErrorf("%s", baseline.Detail)
 	}
 	probed, err := capabilities.Probe(ctx, plan.Executable, nil)
 	if err != nil {
@@ -153,8 +190,10 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 		return runSession{}, err
 	}
 	session := runSession{
-		Preparation: runPreparation{Profile: profile, Plan: plan, Baseline: baseline, StartedAt: startedAt},
-		Status:      status, OwnsProcess: status.Detail == "started",
+		Preparation: runPreparation{
+			Profile: profile, Plan: plan, Baseline: baseline, Admission: report, StartedAt: startedAt,
+		},
+		Status: status, OwnsProcess: status.Detail == "started",
 	}
 	if session.OwnsProcess {
 		coldStart := elapsedMilliseconds(startedAt)

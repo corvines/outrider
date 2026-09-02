@@ -18,6 +18,7 @@ const usage = `outrider: loopback llama.cpp runner
 
   outrider plan <profile>
   outrider check <profile>
+  outrider verify <profile>
   outrider up <profile>
   outrider smoke
   outrider demo <profile>
@@ -118,6 +119,30 @@ func runWithOptions(
 		portOwned := status.Kind == runnerprocess.StatusRunning
 		report := admission.Inspect(ctx, profile, plan, portOwned)
 		return encodeOutput(admission.WithRuntimeCapabilities(ctx, report, plan, false))
+	case "verify":
+		if len(argv) != 2 {
+			return "", usageError("verify expects exactly one runnable profile id")
+		}
+		profile, err := runnableProfile(argv[1])
+		if err != nil {
+			return "", err
+		}
+		plan, err := resolvePlan(argv[1], environment, true, "")
+		if err != nil {
+			return "", err
+		}
+		status, err := runnerprocess.GetStatus(ctx, plan)
+		if err != nil {
+			return "", err
+		}
+		if status.Kind != runnerprocess.StatusRunning || status.Health == nil || !*status.Health {
+			return "", runnerErrorf("profile %s is not the healthy active server", profile.ID)
+		}
+		contract, err := endpoint.VerifyModelContract(ctx, plan.Endpoint, profile)
+		if err != nil {
+			return "", err
+		}
+		return encodeOutput(contract)
 	case "up":
 		if len(argv) != 2 {
 			return "", usageError("up expects exactly one runnable profile id")
@@ -275,7 +300,7 @@ func runDemo(
 		temperature := session.Preparation.Profile.Sampling.Temperature
 		topP := session.Preparation.Profile.Sampling.TopP
 		completion, err := endpoint.RequestChatCompletion(ctx, session.Preparation.Plan.Endpoint, endpoint.ChatOptions{
-			Model:        session.Preparation.Profile.Model.File,
+			Model:        session.Preparation.Profile.ID,
 			SystemPrompt: session.Preparation.Profile.SystemPrompt,
 			Temperature:  &temperature, TopP: &topP,
 		})

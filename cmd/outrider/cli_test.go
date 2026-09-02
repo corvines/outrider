@@ -120,6 +120,7 @@ func TestUsageErrors(t *testing.T) {
 		nil,
 		{"plan"},
 		{"check"},
+		{"verify"},
 		{"up", "qwen35b-mtp"},
 		{"smoke", "tiny"},
 		{"demo"},

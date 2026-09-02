@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/corvines/outrider/internal/capabilities"
 	"github.com/corvines/outrider/internal/manifest"
 )
 
@@ -86,6 +87,41 @@ func Inspect(ctx context.Context, profile manifest.Profile, plan manifest.Plan, 
 		snapshot.PortAvailable = true
 	}
 	return Evaluate(profile, plan, snapshot)
+}
+
+func WithRuntimeCapabilities(ctx context.Context, report Report, plan manifest.Plan, required bool) Report {
+	if !regularFile(plan.Executable) {
+		result := ResultWarn
+		class := ClassDegraded
+		action := "install the pinned runtime before treating this report as complete"
+		if required {
+			result = ResultFail
+			class = ClassBlocked
+			action = "restore the verified llama-server executable"
+		}
+		report.add(Check{
+			ID: "runtime_capabilities", Result: result, Measured: "runtime executable unavailable",
+			Required: "every profile flag advertised by llama-server", NextAction: action, class: class,
+		})
+		return report
+	}
+	probed, err := capabilities.Probe(ctx, plan.Executable, nil)
+	if err == nil {
+		err = capabilities.Assert(probed, plan.Args)
+	}
+	if err != nil {
+		report.add(Check{
+			ID: "runtime_capabilities", Result: ResultFail, Measured: err.Error(),
+			Required:   "every profile flag advertised by llama-server",
+			NextAction: "use the pinned compatible runtime or repair the profile", class: ClassBlocked,
+		})
+		return report
+	}
+	report.add(Check{
+		ID: "runtime_capabilities", Result: ResultPass, Measured: "all profile flags advertised",
+		Required: "every profile flag advertised by llama-server",
+	})
+	return report
 }
 
 func Evaluate(profile manifest.Profile, plan manifest.Plan, snapshot Snapshot) Report {

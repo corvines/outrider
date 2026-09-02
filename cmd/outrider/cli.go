@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/corvines/outrider/internal/admission"
-	"github.com/corvines/outrider/internal/capabilities"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
@@ -76,7 +75,8 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 			return "", err
 		}
 		portOwned := status.Kind == runnerprocess.StatusRunning
-		return encodeOutput(admission.Inspect(ctx, profile, plan, portOwned))
+		report := admission.Inspect(ctx, profile, plan, portOwned)
+		return encodeOutput(admission.WithRuntimeCapabilities(ctx, report, plan, false))
 	case "up":
 		if len(argv) != 2 {
 			return "", usageError("up expects exactly one runnable profile id")
@@ -154,6 +154,10 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 		return runSession{}, &admission.Error{Report: report}
 	}
 	if baseline.Kind == runnerprocess.StatusRunning {
+		report = admission.WithRuntimeCapabilities(ctx, report, initialPlan, true)
+		if report.Blocking() {
+			return runSession{}, &admission.Error{Report: report}
+		}
 		status, err := runnerprocess.StartWithLock(ctx, initialPlan, runnerprocess.StartOptions{}, lock)
 		if err != nil {
 			return runSession{}, err
@@ -175,12 +179,9 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	if err != nil {
 		return runSession{}, err
 	}
-	probed, err := capabilities.Probe(ctx, plan.Executable, nil)
-	if err != nil {
-		return runSession{}, err
-	}
-	if err := capabilities.Assert(probed, plan.Args); err != nil {
-		return runSession{}, err
+	report = admission.WithRuntimeCapabilities(ctx, report, plan, true)
+	if report.Blocking() {
+		return runSession{}, &admission.Error{Report: report}
 	}
 	if _, err := llama.EnsureModelCached(ctx, profile, plan, llama.EnsureModelOptions{}); err != nil {
 		return runSession{}, err

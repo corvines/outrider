@@ -1,6 +1,9 @@
 package admission
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -38,6 +41,24 @@ func TestAdmissionClasses(t *testing.T) {
 	impossible.OS = "linux"
 	if report := Evaluate(profile, plan, impossible); report.Class != ClassImpossible {
 		t.Fatalf("impossible report = %#v", report)
+	}
+}
+
+func TestRuntimeCapabilityFailureUsesAdmissionContract(t *testing.T) {
+	profile, _ := manifest.Get("tiny")
+	root := t.TempDir()
+	executable := filepath.Join(root, "llama-server")
+	if err := os.WriteFile(executable, []byte("#!/bin/sh\necho '  --host HOST'\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	plan, _ := manifest.ResolveCached(profile, manifest.ResolveOptions{Root: root, Executable: executable})
+	report := WithRuntimeCapabilities(context.Background(), Report{Profile: profile.ID, Class: ClassReady}, plan, true)
+	if report.Class != ClassBlocked {
+		t.Fatalf("report = %#v", report)
+	}
+	last := report.Checks[len(report.Checks)-1]
+	if last.ID != "runtime_capabilities" || last.Result != ResultFail || last.NextAction == "" {
+		t.Fatalf("capability check = %#v", last)
 	}
 }
 

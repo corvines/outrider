@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -189,6 +190,70 @@ func TestStartRefusesPortOwnedWithoutActiveRecord(t *testing.T) {
 	}
 }
 
+func TestStatusRepairsChildCrashAfterHealth(t *testing.T) {
+	plan := fakeServerPlanWithArgs(t, "--fake-exit-after-health")
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Kind != StatusRunning {
+		t.Fatalf("started = %#v", started)
+	}
+	time.Sleep(700 * time.Millisecond)
+	status, err := GetActiveStatus(context.Background(), plan.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Kind != StatusStopped || !strings.Contains(status.Detail, "repaired stale") {
+		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestSuspendedServerRetainsIdentityAndRecoversHealth(t *testing.T) {
+	plan := fakeServerPlan(t, false)
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		_ = syscall.Kill(started.PID, syscall.SIGCONT)
+		_, _ = StopActive(context.Background(), plan.State, StopOptions{})
+	}()
+	if err := syscall.Kill(started.PID, syscall.SIGSTOP); err != nil {
+		t.Fatal(err)
+	}
+	checkContext, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	status, err := GetActiveStatus(checkContext, plan.State)
+	cancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Kind != StatusRunning || status.Health == nil || *status.Health {
+		t.Fatalf("suspended status = %#v", status)
+	}
+	if err := syscall.Kill(started.PID, syscall.SIGCONT); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		status, err = GetActiveStatus(context.Background(), plan.State)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Health != nil && *status.Health {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("resumed status = %#v", status)
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 func TestProfilesShareOneActiveRecordAndLifecycleLock(t *testing.T) {
 	plan := fakeServerPlan(t, false)
 	other := plan
@@ -312,10 +377,13 @@ func TestProcessHelper(t *testing.T) {
 	}
 	port := ""
 	noHealth := false
+	exitAfterHealth := false
 	for i := separator; i < len(args); i++ {
 		switch args[i] {
 		case "--fake-no-health":
 			noHealth = true
+		case "--fake-exit-after-health":
+			exitAfterHealth = true
 		case "--port":
 			i++
 			if i < len(args) {
@@ -335,12 +403,25 @@ func TestProcessHelper(t *testing.T) {
 		_, _ = response.Write([]byte("ready"))
 	})
 	server := &http.Server{Addr: "127.0.0.1:" + port, Handler: handler}
+	if exitAfterHealth {
+		go func() {
+			time.Sleep(500 * time.Millisecond)
+			os.Exit(0)
+		}()
+	}
 	if err := server.ListenAndServe(); err != nil {
 		os.Exit(3)
 	}
 }
 
 func fakeServerPlan(t *testing.T, noHealth bool) manifest.Plan {
+	if noHealth {
+		return fakeServerPlanWithArgs(t, "--fake-no-health")
+	}
+	return fakeServerPlanWithArgs(t)
+}
+
+func fakeServerPlanWithArgs(t *testing.T, helperArgs ...string) manifest.Plan {
 	t.Helper()
 	t.Setenv("OUTRIDER_PROCESS_HELPER", "1")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -362,9 +443,7 @@ func fakeServerPlan(t *testing.T, noHealth bool) manifest.Plan {
 		t.Fatal(err)
 	}
 	args := []string{"-test.run=^TestProcessHelper$", "--"}
-	if noHealth {
-		args = append(args, "--fake-no-health")
-	}
+	args = append(args, helperArgs...)
 	args = append(args, "--port", strconv.Itoa(port))
 	plan.Args = args
 	plan.Executable, err = filepath.Abs(os.Args[0])

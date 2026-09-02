@@ -406,20 +406,20 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 	m.rebuildTranscripts()
 	m.followBottom()
 
-	go m.streamResponse()
+	ctx, cancel := context.WithCancel(context.Background())
+	m.promptCancel = cancel
+	go m.streamResponse(ctx)
 	return func() tea.Msg {
 		m2 := m
 		return <-m2.streamCh
 	}
 }
 
-func (m *model) streamResponse() {
+func (m *model) streamResponse(ctx context.Context) {
 	if m.currentModel == "" && len(m.rows) > 0 {
 		m.adoptRow(m.rows[0])
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	m.promptCancel = cancel
 	payload := completionRequest{}
 	payload.Model = m.currentModel
 	payload.Stream = true
@@ -504,6 +504,7 @@ func (m *model) streamResponse() {
 
 func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 	if x.err != nil {
+		m.promptCancel = nil
 		m.streamActive = false
 		m.streamAborting = false
 		m.activityPrefix = ""
@@ -556,6 +557,7 @@ func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 		return m, func() tea.Msg { return <-m.streamCh }
 	}
 	if x.done {
+		m.promptCancel = nil
 		if m.streamActive {
 			m.totalOutputTokens += m.lastTurnOutputTokens
 		}

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -240,7 +241,7 @@ func TestCompletionHTTPErrorIncludesServerDetail(t *testing.T) {
 		{role: "user", content: "hello"},
 		{role: "assistant"},
 	}
-	go m.streamResponse()
+	go m.streamResponse(context.Background())
 
 	select {
 	case response := <-m.streamCh:

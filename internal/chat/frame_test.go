@@ -25,11 +25,11 @@ func frameModelAt(width, height int) *model {
 	m.currentModel, m.quantization, m.contextWindow = "qwen35b-mtp", "Q4_K_M", 32768
 	m.rows = []modelRow{
 		{id: "llama-3.2-3b", label: "llama-3.2-3b", endpoint: m.endpoint,
-			source: ":11435 llama.cpp", quant: "Q4_0", ctx: 4096},
+			source: ":11435 llama.cpp", group: groupDevelopment, quant: "Q4_0", ctx: 4096},
 		{id: "qwen35b-mtp", label: "qwen35b-mtp", endpoint: m.endpoint,
-			source: ":11435 llama.cpp", quant: "Q4_K_M", ctx: 32768},
+			source: ":11435 llama.cpp", group: groupOutrider, quant: "Q4_K_M", ctx: 32768},
 		{id: "tiny", label: "tiny", endpoint: "http://127.0.0.1:11434",
-			source: ":11434 ollama", quant: "", ctx: 0},
+			source: ":11434 ollama", group: groupOllama, quant: "", ctx: 0},
 	}
 	m.messages = []message{
 		{role: roleUser, content: "write a haiku on oranges"},
@@ -100,10 +100,22 @@ func TestPickerRowsReadWithoutColor(t *testing.T) {
 	m := frameModel()
 	m.openPicker()
 	plain := ansi.ReplaceAllString(m.View(), "")
-	for _, want := range []string{"›   llama-3.2-3b", "  ● qwen35b-mtp"} {
+	for _, want := range []string{"› ● qwen35b-mtp", "    llama-3.2-3b"} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("stripped of color the picker has no %q row:\n%s", want, plain)
 		}
+	}
+}
+
+func TestPickerGroupsOutriderBeforeDevelopmentAndOllama(t *testing.T) {
+	m := frameModelAt(120, 40)
+	m.openPicker()
+	plain := ansi.ReplaceAllString(m.View(), "")
+	outRider := strings.Index(plain, groupOutrider)
+	development := strings.Index(plain, groupDevelopment)
+	ollama := strings.Index(plain, groupOllama)
+	if outRider < 0 || development < outRider || ollama < development {
+		t.Fatalf("picker groups are not ordered:\n%s", plain)
 	}
 }
 

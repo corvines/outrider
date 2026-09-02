@@ -408,21 +408,21 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.promptCancel = cancel
-	go m.streamResponse(ctx)
+	payload := m.completionPayload()
+	endpoint := m.endpoint
+	go m.streamResponse(ctx, endpoint, payload)
 	return func() tea.Msg {
 		m2 := m
 		return <-m2.streamCh
 	}
 }
 
-func (m *model) streamResponse(ctx context.Context) {
+func (m *model) completionPayload() completionRequest {
 	if m.currentModel == "" && len(m.rows) > 0 {
 		m.adoptRow(m.rows[0])
 	}
 
-	payload := completionRequest{}
-	payload.Model = m.currentModel
-	payload.Stream = true
+	payload := completionRequest{Model: m.currentModel, Stream: true}
 	for index, msg := range m.messages {
 		if index == len(m.messages)-1 && msg.role == "assistant" && msg.content == "" {
 			continue
@@ -431,8 +431,12 @@ func (m *model) streamResponse(ctx context.Context) {
 			payload.Messages = append(payload.Messages, requestMessage{Role: msg.role, Content: msg.content})
 		}
 	}
+	return payload
+}
+
+func (m *model) streamResponse(ctx context.Context, endpoint string, payload completionRequest) {
 	buf, _ := json.Marshal(payload)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.endpoint+"/v1/chat/completions", bytes.NewBuffer(buf))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint+"/v1/chat/completions", bytes.NewBuffer(buf))
 	if err != nil {
 		m.streamCh <- streamMsg{err: err}
 		return

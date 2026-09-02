@@ -241,7 +241,7 @@ func TestCompletionHTTPErrorIncludesServerDetail(t *testing.T) {
 		{role: "user", content: "hello"},
 		{role: "assistant"},
 	}
-	go m.streamResponse(context.Background())
+	go m.streamResponse(context.Background(), m.endpoint, m.completionPayload())
 
 	select {
 	case response := <-m.streamCh:

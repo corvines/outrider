@@ -94,7 +94,9 @@ func (m *model) openPicker() tea.Cmd {
 	caret := cursor.New()
 	caret.Style = styleInputCursor
 	caret.SetChar(" ")
-	m.picker = &picker{rows: m.rows, sources: collectSources(m.rows), caret: caret}
+	rows := append([]modelRow(nil), m.rows...)
+	sortModelRows(rows)
+	m.picker = &picker{rows: rows, sources: collectSources(rows), caret: caret}
 	m.picker.refine()
 	return m.picker.caret.Focus()
 }
@@ -181,7 +183,7 @@ func (m *model) pickerView() string {
 	inner := width - 4
 	hits := p.matches()
 	legend := p.fitLegend(inner, m.height, hits)
-	first, last := p.window(len(hits), m.height, legend)
+	first, last := p.window(len(hits), m.height, legend, groupCount(hits))
 
 	rows := []string{
 		spread(styleText.Bold(true).Render("Select model"), styleDim.Render("esc"), inner),
@@ -193,8 +195,13 @@ func (m *model) pickerView() string {
 		rows = append(rows, styleDim.Render("no model matches that"))
 	}
 	cols := p.columns(hits[first:last], inner, len(legend) > 0)
+	previousGroup := ""
 	for i := first; i < last; i++ {
 		row := hits[i]
+		if row.group != previousGroup {
+			rows = append(rows, styleAccent.Bold(true).Render(row.group))
+			previousGroup = row.group
+		}
 		current := row.id == m.currentModel && row.endpoint == m.endpoint
 		cursor, dot := "  ", "  "
 		if i == p.cursor {
@@ -232,12 +239,12 @@ func (m *model) pickerView() string {
 }
 
 // window returns the slice of matches that fits the panel with the cursor shown.
-func (p *picker) window(count, height int, legend []string) (int, int) {
+func (p *picker) window(count, height int, legend []string, groups int) (int, int) {
 	chrome := 10
 	if len(legend) > 0 {
 		chrome += len(legend) + 1
 	}
-	rows := max(1, height-chrome)
+	rows := max(1, height-chrome-groups)
 	if count <= rows {
 		return 0, count
 	}
@@ -249,6 +256,14 @@ func (p *picker) window(count, height int, legend []string) (int, int) {
 		first = count - rows
 	}
 	return first, first + rows
+}
+
+func groupCount(rows []modelRow) int {
+	seen := make(map[string]bool)
+	for _, row := range rows {
+		seen[row.group] = true
+	}
+	return len(seen)
 }
 
 func min(a, b int) int {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,10 +23,17 @@ type modelRow struct {
 	label    string
 	endpoint string
 	source   string
+	group    string
 	quant    string
 	ctx      int
 	path     string
 }
+
+const (
+	groupOutrider    = "OUTRIDER"
+	groupDevelopment = "DEVELOPMENT CACHE"
+	groupOllama      = "OLLAMA"
+)
 
 type discoveredMsg struct {
 	rows []modelRow
@@ -77,12 +85,7 @@ func discoverModels(endpoint string, ports []int) tea.Cmd {
 				err: fmt.Errorf("no models on any local server"),
 			}}
 		}
-		sort.Slice(rows, func(i, j int) bool {
-			if rows[i].label != rows[j].label {
-				return rows[i].label < rows[j].label
-			}
-			return rows[i].endpoint < rows[j].endpoint
-		})
+		sortModelRows(rows)
 		return discoveredMsg{rows: rows}
 	}
 }
@@ -132,12 +135,63 @@ func probe(endpoint string) []modelRow {
 			label:    modelLabel(item.ID),
 			endpoint: endpoint,
 			source:   sourceLabel(endpoint, item.OwnedBy),
+			group:    sourceGroup(item.OwnedBy, path),
 			quant:    shortQuant(ifEmpty(item.Meta.FType, item.Quantization)),
 			ctx:      firstNonZero(item.Meta.NCtx, item.ContextWindow),
 			path:     path,
 		})
 	}
 	return rows
+}
+
+func sourceGroup(ownedBy string, path string) string {
+	cleanPath := filepath.ToSlash(path)
+	if strings.Contains(cleanPath, "/Library/Caches/Outrider/models/") {
+		return groupOutrider
+	}
+	if ownedBy == "library" {
+		return groupOllama
+	}
+	return groupDevelopment
+}
+
+func sortModelRows(rows []modelRow) {
+	for index := range rows {
+		if rows[index].group == "" {
+			rows[index].group = sourceGroup(sourceOwner(rows[index].source), rows[index].path)
+		}
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		leftRank, rightRank := groupRank(rows[i].group), groupRank(rows[j].group)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
+		left, right := strings.ToLower(rows[i].label), strings.ToLower(rows[j].label)
+		if left != right {
+			return left < right
+		}
+		return rows[i].endpoint < rows[j].endpoint
+	})
+}
+
+func sourceOwner(source string) string {
+	if strings.HasSuffix(source, " ollama") {
+		return "library"
+	}
+	return ""
+}
+
+func groupRank(group string) int {
+	switch group {
+	case groupOutrider:
+		return 0
+	case groupDevelopment:
+		return 1
+	case groupOllama:
+		return 2
+	default:
+		return 3
+	}
 }
 
 // sourceLabel names the port and the server software behind it.

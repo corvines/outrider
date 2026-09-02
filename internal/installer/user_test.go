@@ -52,10 +52,7 @@ func TestUserInstallRefusesUnownedOrModifiedTarget(t *testing.T) {
 	if _, err := InstallUser(testBinary(t, "new"), home); err == nil || !strings.Contains(err.Error(), "incomplete") {
 		t.Fatalf("unowned target error = %v", err)
 	}
-	if err := os.Remove(layout.Target); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := InstallUser(testBinary(t, "owned"), home); err != nil {
+	if _, err := InstallUserWithOptions(testBinary(t, "owned"), home, UserInstallOptions{ReplaceUnmanaged: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(layout.Target, []byte("modified"), 0o755); err != nil {
@@ -63,5 +60,10 @@ func TestUserInstallRefusesUnownedOrModifiedTarget(t *testing.T) {
 	}
 	if _, err := InstallUser(testBinary(t, "new"), home); err == nil || !strings.Contains(err.Error(), "refusing to replace") {
 		t.Fatalf("modified target error = %v", err)
+	}
+	if _, err := InstallUserWithOptions(
+		testBinary(t, "forced"), home, UserInstallOptions{ReplaceUnmanaged: true},
+	); err == nil || !strings.Contains(err.Error(), "refusing to replace") {
+		t.Fatalf("modified managed target was replaced: %v", err)
 	}
 }

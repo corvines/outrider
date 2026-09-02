@@ -30,7 +30,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider models
   outrider show <profile>
   outrider pull <profile>
-  outrider install
+  outrider install [--replace-unmanaged]
   outrider uninstall
   outrider version
   outrider start
@@ -177,8 +177,9 @@ func runWithOptions(
 		}
 		return formatOutput(output, options.Human)
 	case "install":
-		if len(argv) != 1 {
-			return "", usageError("install does not accept arguments")
+		replaceUnmanaged, err := parseInstallArguments(argv[1:])
+		if err != nil {
+			return "", err
 		}
 		executable := options.CurrentExecutable
 		if executable == nil {
@@ -188,7 +189,9 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		marker, err := installer.InstallUser(source, environment["HOME"])
+		marker, err := installer.InstallUserWithOptions(source, environment["HOME"], installer.UserInstallOptions{
+			ReplaceUnmanaged: replaceUnmanaged,
+		})
 		if err != nil {
 			return "", err
 		}
@@ -376,6 +379,19 @@ func runWithOptions(
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
 	}
+}
+
+func parseInstallArguments(arguments []string) (bool, error) {
+	flags := flag.NewFlagSet("install", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	replaceUnmanaged := flags.Bool("replace-unmanaged", false, "replace an existing unmarked Outrider binary")
+	if err := flags.Parse(arguments); err != nil {
+		return false, usageError(err.Error())
+	}
+	if flags.NArg() != 0 {
+		return false, usageError("install accepts only --replace-unmanaged")
+	}
+	return *replaceUnmanaged, nil
 }
 
 func runInteractive(

@@ -17,6 +17,10 @@ type UserLayout struct {
 	Marker string
 }
 
+type UserInstallOptions struct {
+	ReplaceUnmanaged bool
+}
+
 func ResolveUserLayout(home string) (UserLayout, error) {
 	if strings.TrimSpace(home) == "" {
 		return UserLayout{}, fmt.Errorf("HOME is required for a user-local install")
@@ -32,6 +36,10 @@ func ResolveUserLayout(home string) (UserLayout, error) {
 }
 
 func InstallUser(binary string, home string) (Marker, error) {
+	return InstallUserWithOptions(binary, home, UserInstallOptions{})
+}
+
+func InstallUserWithOptions(binary string, home string, options UserInstallOptions) (Marker, error) {
 	layout, err := ResolveUserLayout(home)
 	if err != nil {
 		return Marker{}, err
@@ -47,7 +55,20 @@ func InstallUser(binary string, home string) (Marker, error) {
 	if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
 		return Marker{}, fmt.Errorf("install binary is not an executable regular file: %s", binary)
 	}
-	existing, err := verifyOwnedUserInstall(layout)
+	targetExists, err := exists(layout.Target)
+	if err != nil {
+		return Marker{}, err
+	}
+	markerExists, err := exists(layout.Marker)
+	if err != nil {
+		return Marker{}, err
+	}
+	var existing *Marker
+	if options.ReplaceUnmanaged && targetExists && !markerExists {
+		existing = nil
+	} else {
+		existing, err = verifyOwnedUserInstall(layout)
+	}
 	if err != nil {
 		return Marker{}, err
 	}

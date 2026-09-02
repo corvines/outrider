@@ -1,6 +1,7 @@
 package manifest
 
 import (
+	"encoding/json"
 	"errors"
 	"path/filepath"
 	"reflect"
@@ -43,6 +44,29 @@ func TestProfiles(t *testing.T) {
 	}
 	if _, err := Get("missing"); err == nil {
 		t.Fatal("missing profile did not fail")
+	}
+}
+
+func TestProfilesRoundTripJSON(t *testing.T) {
+	profiles, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded []Profile
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if len(decoded) != len(profiles) {
+		t.Fatalf("decoded %d profiles, want %d", len(decoded), len(profiles))
+	}
+	for index := range profiles {
+		if decoded[index].GPULayers != profiles[index].GPULayers {
+			t.Fatalf("profile %s gpu layers = %#v", profiles[index].ID, decoded[index].GPULayers)
+		}
 	}
 }
 

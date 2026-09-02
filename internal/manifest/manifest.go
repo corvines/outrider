@@ -83,6 +83,13 @@ type GPULayers struct {
 	Count int
 }
 
+func (g GPULayers) MarshalJSON() ([]byte, error) {
+	if g.Mode != "" {
+		return json.Marshal(g.Mode)
+	}
+	return json.Marshal(g.Count)
+}
+
 func (g *GPULayers) UnmarshalJSON(data []byte) error {
 	var mode string
 	if err := json.Unmarshal(data, &mode); err == nil {

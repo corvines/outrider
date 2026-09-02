@@ -119,6 +119,7 @@ func TestProcessCommandsDoNotPrepareRuntime(t *testing.T) {
 
 func TestLifecycleCommandAliases(t *testing.T) {
 	tests := map[string]string{
+		"models": "ls",
 		"serve":  "serve",
 		"up":     "serve",
 		"ps":     "ps",
@@ -166,7 +167,7 @@ func TestListAndShowProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Profiles) != 8 {
+	if len(list.Profiles) != 9 {
 		t.Fatalf("profiles = %#v", list.Profiles)
 	}
 	if list.Profiles[0].Cache.State != "missing" {
@@ -270,6 +271,7 @@ func TestUsageErrors(t *testing.T) {
 		{"verify"},
 		{"ls", "extra"},
 		{"show"},
+		{"pull"},
 		{"run"},
 		{"chat", "unexpected"},
 		{"chat", "--missing"},
@@ -277,6 +279,7 @@ func TestUsageErrors(t *testing.T) {
 		{"smoke", "tiny"},
 		{"demo"},
 		{"ps", "tiny"},
+		{"logs", "extra"},
 		{"stop", "qwen3-1.7b"},
 		{"ps", "tiny", "extra"},
 		{"missing"},

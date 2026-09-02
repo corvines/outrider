@@ -12,8 +12,14 @@ func TestGatewayModelsAdvertiseRunnableProfiles(t *testing.T) {
 	if len(models) == 0 {
 		t.Fatal("gateway has no models")
 	}
-	if models[len(models)-1].ID != "qwen35b-mtp" {
-		t.Fatalf("last model = %q", models[len(models)-1].ID)
+	found := false
+	for _, model := range models {
+		if model.ID == "gemma4-26b" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("gateway does not advertise gemma4-26b")
 	}
 }
 

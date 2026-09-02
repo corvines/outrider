@@ -26,14 +26,16 @@ const (
 )
 
 type Status struct {
-	Kind     StatusKind `json:"kind"`
-	PID      int        `json:"pid,omitempty"`
-	Preset   string     `json:"preset,omitempty"`
-	Endpoint string     `json:"endpoint"`
-	Health   *bool      `json:"health,omitempty"`
-	Detail   string     `json:"detail,omitempty"`
-	LogFile  string     `json:"logFile"`
-	Timings  *Timings   `json:"timings,omitempty"`
+	Kind          StatusKind `json:"kind"`
+	PID           int        `json:"pid,omitempty"`
+	Preset        string     `json:"preset,omitempty"`
+	Endpoint      string     `json:"endpoint"`
+	Health        *bool      `json:"health,omitempty"`
+	Detail        string     `json:"detail,omitempty"`
+	LogFile       string     `json:"logFile"`
+	StartedAt     string     `json:"startedAt,omitempty"`
+	ResidentBytes int64      `json:"residentBytes,omitempty"`
+	Timings       *Timings   `json:"timings,omitempty"`
 }
 
 type Timings struct {
@@ -101,10 +103,10 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 				return Status{}, err
 			}
 			health := true
-			return Status{
+			return withProcessMetrics(Status{
 				Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint,
 				Health: &health, LogFile: plan.State.Log, Detail: "already running",
-			}, nil
+			}, *record), nil
 		}
 	}
 	if err := ctx.Err(); err != nil {
@@ -213,11 +215,11 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		return Status{}, runnerError("runner start aborted", err)
 	}
 	health := true
-	return Status{
+	return withProcessMetrics(Status{
 		Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint,
 		Health: &health, LogFile: plan.State.Log, Detail: "started",
 		Timings: &Timings{TimeToHealthMS: elapsedMilliseconds(launchStartedAt)},
-	}, nil
+	}, *record), nil
 }
 
 func assertPortAvailable(plan manifest.Plan) error {
@@ -273,11 +275,11 @@ func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
 	if check.OK {
 		detail = "healthy"
 	}
-	return Status{
+	return withProcessMetrics(Status{
 		Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, Health: &check.OK,
 		Detail:  detail,
 		LogFile: plan.State.Log,
-	}, nil
+	}, *record), nil
 }
 
 func GetActiveStatus(ctx context.Context, state manifest.StatePaths) (Status, error) {
@@ -318,10 +320,19 @@ func GetActiveStatus(ctx context.Context, state manifest.StatePaths) (Status, er
 	if check.OK {
 		detail = "healthy"
 	}
-	return Status{
+	return withProcessMetrics(Status{
 		Kind: StatusRunning, PID: record.PID, Preset: record.Preset,
 		Endpoint: endpointURL, Health: &check.OK, Detail: detail, LogFile: record.LogFile,
-	}, nil
+	}, *record), nil
+}
+
+func withProcessMetrics(status Status, record ProcessRecord) Status {
+	status.StartedAt = record.StartedAt
+	residentKiB, err := strconv.ParseInt(strings.TrimSpace(ps(record.PID, "rss=")), 10, 64)
+	if err == nil && residentKiB > 0 {
+		status.ResidentBytes = residentKiB * 1024
+	}
+	return status
 }
 
 func Stop(ctx context.Context, plan manifest.Plan, options StopOptions) (Status, error) {

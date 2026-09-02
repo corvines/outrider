@@ -26,17 +26,21 @@ const usage = `outrider: loopback llama.cpp runner
   outrider plan <profile>
   outrider check <profile>
   outrider verify <profile>
-  outrider ls
+  outrider models
   outrider show <profile>
+  outrider pull <profile>
   outrider serve [profile]
   outrider run <profile|cached-model>
   outrider chat [--endpoint URL]
   outrider smoke
   outrider demo <profile>
   outrider ps
+  outrider logs [--lines N]
   outrider stop
 
-Compatibility aliases: up = serve, status = ps, down = stop.
+Compatibility aliases: ls = models, up = serve, status = ps, down = stop.
+
+Add --json anywhere for machine-readable output.
 
 Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME,
 OUTRIDER_PORT, OLLAMA_MODELS.
@@ -67,6 +71,7 @@ type runSession struct {
 type runOptions struct {
 	Progress llama.ProgressFunc
 	Chat     func(string) error
+	Human    bool
 }
 
 type downloadTracker struct {
@@ -136,7 +141,7 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		return encodeOutput(output)
+		return formatOutput(output, options.Human)
 	case "show":
 		if len(argv) != 2 {
 			return "", usageError("show expects exactly one profile id")
@@ -153,7 +158,16 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		return encodeOutput(profileDetailOutput{Profile: profile, Cache: cache})
+		return formatOutput(profileDetailOutput{Profile: profile, Cache: cache}, options.Human)
+	case "pull":
+		if len(argv) != 2 {
+			return "", usageError("pull expects exactly one runnable profile id")
+		}
+		output, err := pullProfile(ctx, argv[1], environment, options)
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(output, options.Human)
 	case "chat":
 		endpoint, err := parseChatArguments(argv[1:])
 		if err != nil {
@@ -175,7 +189,7 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		return encodeOutput(newPlanOutput(plan))
+		return formatOutput(newPlanOutput(plan), options.Human)
 	case "check":
 		if len(argv) != 2 {
 			return "", usageError("check expects exactly one profile id")
@@ -194,7 +208,7 @@ func runWithOptions(
 		}
 		portOwned := status.Kind == runnerprocess.StatusRunning
 		report := admission.Inspect(ctx, profile, plan, portOwned)
-		return encodeOutput(admission.WithRuntimeCapabilities(ctx, report, plan, false))
+		return formatOutput(admission.WithRuntimeCapabilities(ctx, report, plan, false), options.Human)
 	case "verify":
 		if len(argv) != 2 {
 			return "", usageError("verify expects exactly one runnable profile id")
@@ -218,7 +232,7 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		return encodeOutput(contract)
+		return formatOutput(contract, options.Human)
 	case "serve":
 		if len(argv) == 1 {
 			if err := runGateway(ctx, environment, options); err != nil {
@@ -233,7 +247,7 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		return encodeOutput(newUpOutput(session))
+		return formatOutput(newUpOutput(session), options.Human)
 	case "run":
 		if len(argv) != 2 {
 			return "", usageError("run expects exactly one profile or development model name")
@@ -266,7 +280,17 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		return encodeOutput(status)
+		return formatOutput(status, options.Human)
+	case "logs":
+		lines, err := parseLogArguments(argv[1:])
+		if err != nil {
+			return "", err
+		}
+		output, err := readActiveLog(ctx, environment, lines)
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(output, options.Human)
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
 	}
@@ -448,6 +472,8 @@ func parseChatArguments(arguments []string) (string, error) {
 
 func canonicalCommand(command string) string {
 	switch command {
+	case "models":
+		return "ls"
 	case "up":
 		return "serve"
 	case "status":
@@ -457,6 +483,51 @@ func canonicalCommand(command string) string {
 	default:
 		return command
 	}
+}
+
+func pullProfile(
+	ctx context.Context,
+	profileID string,
+	environment map[string]string,
+	options runOptions,
+) (pullOutput, error) {
+	profile, err := runnableProfile(profileID)
+	if err != nil {
+		return pullOutput{}, err
+	}
+	initialPlan, err := resolvePlan(profileID, environment, true, "")
+	if err != nil {
+		return pullOutput{}, err
+	}
+	// Pulling does not bind the serving port, so an existing listener must not
+	// block cache preparation.
+	report := admission.Inspect(ctx, profile, initialPlan, true)
+	if report.Blocking() {
+		return pullOutput{}, &admission.Error{Report: report}
+	}
+	executable, err := llama.EnsureServer(ctx, llama.EnsureServerOptions{
+		StateRoot: initialPlan.State.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"],
+		Progress: options.Progress,
+	})
+	if err != nil {
+		return pullOutput{}, err
+	}
+	plan, err := resolvePlan(profileID, environment, true, executable)
+	if err != nil {
+		return pullOutput{}, err
+	}
+	report = admission.WithRuntimeCapabilities(ctx, report, plan, true)
+	if report.Blocking() {
+		return pullOutput{}, &admission.Error{Report: report}
+	}
+	model, err := llama.EnsureModelCached(ctx, profile, plan, llama.EnsureModelOptions{Progress: options.Progress})
+	if err != nil {
+		return pullOutput{}, err
+	}
+	return pullOutput{
+		Profile: profile.ID, Runtime: executable, Model: model,
+		SizeBytes: profile.Model.SizeBytes, Admission: report,
+	}, nil
 }
 
 func activeState(environment map[string]string) (manifest.StatePaths, error) {
@@ -589,9 +660,9 @@ func runDemo(
 			if generationTiming == nil {
 				generationTiming, _ = endpoint.ReadGenerationTimingFromLog(session.Preparation.Plan.State.Log)
 			}
-			output, operationErr = encodeOutput(newDemoOutput(
+			output, operationErr = formatOutput(newDemoOutput(
 				session, completion.AssistantResponse, elapsedMilliseconds(requestStartedAt), generationTiming,
-			))
+			), options.Human)
 		}
 	}
 
@@ -690,6 +761,13 @@ func encodeOutput(value any) (string, error) {
 		return "", err
 	}
 	return string(encoded) + "\n", nil
+}
+
+func formatOutput(value any, human bool) (string, error) {
+	if human {
+		return humanOutput(value)
+	}
+	return encodeOutput(value)
 }
 
 func usageError(message string) error {

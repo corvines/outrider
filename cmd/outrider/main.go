@@ -15,16 +15,30 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	options := runOptions{}
+	arguments, jsonOutput := outputArguments(os.Args[1:])
+	options := runOptions{Human: !jsonOutput}
 	if terminal, err := os.Stderr.Stat(); err == nil && terminal.Mode()&os.ModeCharDevice != 0 {
 		options.Progress = renderDownloadProgress
 	}
-	output, err := runWithOptions(ctx, os.Args[1:], environmentMap(os.Environ()), options)
+	output, err := runWithOptions(ctx, arguments, environmentMap(os.Environ()), options)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "outrider: %v\n", err)
 		os.Exit(1)
 	}
 	_, _ = os.Stdout.WriteString(output)
+}
+
+func outputArguments(arguments []string) ([]string, bool) {
+	filtered := make([]string, 0, len(arguments))
+	jsonOutput := false
+	for _, argument := range arguments {
+		if argument == "--json" {
+			jsonOutput = true
+			continue
+		}
+		filtered = append(filtered, argument)
+	}
+	return filtered, jsonOutput
 }
 
 func renderDownloadProgress(progress llama.DownloadProgress) {

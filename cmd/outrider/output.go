@@ -36,6 +36,7 @@ type profileSummaryOutput struct {
 	Runnable    bool               `json:"runnable"`
 	Description string             `json:"description"`
 	Model       modelOutput        `json:"model"`
+	SizeBytes   int64              `json:"sizeBytes,omitempty"`
 	Context     int                `json:"context"`
 	MTP         bool               `json:"mtp"`
 	Cache       profileCacheOutput `json:"cache"`
@@ -49,6 +50,19 @@ type profileListOutput struct {
 type profileDetailOutput struct {
 	Profile manifest.Profile   `json:"profile"`
 	Cache   profileCacheOutput `json:"cache"`
+}
+
+type pullOutput struct {
+	Profile   string           `json:"profile"`
+	Runtime   string           `json:"runtime"`
+	Model     string           `json:"model"`
+	SizeBytes int64            `json:"sizeBytes"`
+	Admission admission.Report `json:"admission"`
+}
+
+type logOutput struct {
+	LogFile string   `json:"logFile"`
+	Lines   []string `json:"lines"`
 }
 
 type stateOutput struct {
@@ -77,6 +91,7 @@ type planOutput struct {
 
 type upOutput struct {
 	Kind       string             `json:"kind"`
+	Profile    string             `json:"profile"`
 	PID        int                `json:"pid,omitempty"`
 	Endpoint   string             `json:"endpoint"`
 	Health     *bool              `json:"health,omitempty"`
@@ -133,7 +148,7 @@ func newProfileSummary(profile manifest.Profile, state manifest.StatePaths) (pro
 	}
 	return profileSummaryOutput{
 		ID: profile.ID, Runnable: profile.Runnable, Description: profile.Description,
-		Model: newModelOutput(profile.Model), Context: profile.Context.Size,
+		Model: newModelOutput(profile.Model), SizeBytes: profile.Model.SizeBytes, Context: profile.Context.Size,
 		MTP: profile.Speculation.Mode == "mtp", Cache: cache,
 	}, nil
 }
@@ -159,7 +174,8 @@ func inspectProfileCache(profile manifest.Profile, path string) (profileCacheOut
 func newUpOutput(session runSession) upOutput {
 	status := session.Status
 	output := upOutput{
-		Kind: string(status.Kind), PID: status.PID, Endpoint: status.Endpoint,
+		Kind: string(status.Kind), Profile: session.Preparation.Profile.ID,
+		PID: status.PID, Endpoint: status.Endpoint,
 		Health: status.Health, Detail: status.Detail, LogFile: status.LogFile,
 		Executable: session.Preparation.Plan.Executable, Model: session.Preparation.Plan.State.Model,
 		Argv:      append([]string{session.Preparation.Plan.Executable}, session.Preparation.Plan.Args...),

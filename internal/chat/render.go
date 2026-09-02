@@ -274,20 +274,39 @@ func (m *model) View() string {
 		indentLines(m.footerView(), sideMargin)
 }
 
-// truncateMiddle elides the middle, so a trimmed path keeps both the directory
-// it lives in and the end of its name.
-func truncateMiddle(text string, max int) string {
-	if max <= 0 {
-		return ""
+// wrapHard breaks text to width, preferring a space but splitting mid-word when
+// a run has none, which is the normal case for a path. Continuation lines are
+// indented so a wrapped entry stays visually one item.
+func wrapHard(text string, width, indent int) []string {
+	if width <= 0 {
+		return nil
 	}
-	if lipgloss.Width(text) <= max {
+	var out []string
+	for {
+		limit := width
+		if len(out) > 0 {
+			limit = max(1, width-indent)
+		}
+		runes := []rune(text)
+		if len(runes) <= limit {
+			out = append(out, prefixLine(text, len(out) > 0, indent))
+			return out
+		}
+		cut := limit
+		if space := strings.LastIndex(string(runes[:limit+1]), " "); space > limit/2 {
+			cut = len([]rune(string(runes[:limit+1])[:space]))
+		}
+		out = append(out, prefixLine(strings.TrimRight(string(runes[:cut]), " "), len(out) > 0, indent))
+		text = strings.TrimLeft(string(runes[cut:]), " ")
+		if text == "" {
+			return out
+		}
+	}
+}
+
+func prefixLine(text string, continuation bool, indent int) string {
+	if !continuation {
 		return text
 	}
-	if max <= 1 {
-		return "…"
-	}
-	runes := []rune(text)
-	head := (max - 1) * 3 / 5
-	tail := max - 1 - head
-	return string(runes[:head]) + "…" + string(runes[len(runes)-tail:])
+	return strings.Repeat(" ", indent) + text
 }

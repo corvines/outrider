@@ -177,19 +177,41 @@ func TestShortQuant(t *testing.T) {
 	}
 }
 
-func TestTruncateMiddleKeepsBothEnds(t *testing.T) {
-	path := "~/.ollama/models/blobs/sha256-16a9369d0805f80b7377d25d87f937a90c05dc04ad79173a52001e42c9aab311"
-	got := truncateMiddle(path, 60)
-	if lipgloss.Width(got) != 60 {
-		t.Errorf("truncateMiddle gave width %d, want 60: %q", lipgloss.Width(got), got)
+func TestWrapHardBreaksAPathWithNoSpaces(t *testing.T) {
+	text := "*1  :11434 ollama  ~/.ollama/models/blobs/sha256-16a9369d0805f80b7377d25d87f937a90c05dc04ad79173a52001e42c9aab311"
+	lines := wrapHard(text, 44, 4)
+	if len(lines) < 3 {
+		t.Fatalf("a 115 character entry did not wrap: %q", lines)
 	}
-	if !strings.HasPrefix(got, "~/.ollama/models/blobs/") {
-		t.Errorf("the store the weights live in was trimmed away: %q", got)
+	for _, line := range lines {
+		if lipgloss.Width(line) > 44 {
+			t.Errorf("line is %d wide, panel is 44: %q", lipgloss.Width(line), line)
+		}
 	}
-	if !strings.HasSuffix(got, "c9aab311") {
-		t.Errorf("the end of the name was trimmed away: %q", got)
+	if !strings.HasPrefix(lines[0], "*1  :11434 ollama") {
+		t.Errorf("the marker and server were not kept together: %q", lines[0])
 	}
-	if same := truncateMiddle(path, 200); same != path {
-		t.Errorf("a path that fits was altered: %q", same)
+	for _, line := range lines[1:] {
+		if !strings.HasPrefix(line, "    ") {
+			t.Errorf("a continuation line was not indented: %q", line)
+		}
+	}
+	joined := strings.ReplaceAll(strings.Join(lines, ""), " ", "")
+	if !strings.HasSuffix(joined, "c9aab311") {
+		t.Errorf("the end of the path was dropped: %q", joined)
+	}
+}
+
+func TestPickerFootnotesEverySource(t *testing.T) {
+	m := frameModelAt(120, 40)
+	m.openPicker()
+	frame := ansi.ReplaceAllString(m.View(), "")
+	for _, want := range []string{"*1", "*2", ":11434 ollama", ":11435 llama.cpp"} {
+		if !strings.Contains(frame, want) {
+			t.Errorf("the picker never showed %q:\n%s", want, frame)
+		}
+	}
+	if strings.Count(frame, ":11434 ollama") != 1 {
+		t.Errorf("the server name repeated instead of being footnoted:\n%s", frame)
 	}
 }

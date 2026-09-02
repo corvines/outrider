@@ -201,13 +201,19 @@ func TestStatusRepairsChildCrashAfterHealth(t *testing.T) {
 	if started.Kind != StatusRunning {
 		t.Fatalf("started = %#v", started)
 	}
-	time.Sleep(700 * time.Millisecond)
-	status, err := GetActiveStatus(context.Background(), plan.State)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.Kind != StatusStopped || !strings.Contains(status.Detail, "repaired stale") {
-		t.Fatalf("status = %#v", status)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		status, err := GetActiveStatus(context.Background(), plan.State)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if status.Kind == StatusStopped && strings.Contains(status.Detail, "repaired stale") {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("status = %#v", status)
+		}
+		time.Sleep(25 * time.Millisecond)
 	}
 }
 
@@ -395,20 +401,23 @@ func TestProcessHelper(t *testing.T) {
 		os.Exit(2)
 	}
 	handler := http.NewServeMux()
+	var exitOnce sync.Once
 	handler.HandleFunc("/health", func(response http.ResponseWriter, _ *http.Request) {
 		if noHealth {
 			http.Error(response, "loading", http.StatusServiceUnavailable)
 			return
 		}
 		_, _ = response.Write([]byte("ready"))
+		if exitAfterHealth {
+			exitOnce.Do(func() {
+				go func() {
+					time.Sleep(100 * time.Millisecond)
+					os.Exit(0)
+				}()
+			})
+		}
 	})
 	server := &http.Server{Addr: "127.0.0.1:" + port, Handler: handler}
-	if exitAfterHealth {
-		go func() {
-			time.Sleep(500 * time.Millisecond)
-			os.Exit(0)
-		}()
-	}
 	if err := server.ListenAndServe(); err != nil {
 		os.Exit(3)
 	}

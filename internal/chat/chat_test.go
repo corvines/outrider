@@ -148,6 +148,9 @@ func TestStreamedTurnAndStats(t *testing.T) {
 	if !bytes.Contains([]byte(out), []byte("1 turn")) {
 		t.Fatalf("expected singular turn noun")
 	}
+	if !bytes.Contains([]byte(out), []byte("4 output tokens")) {
+		t.Fatalf("expected final timing to be counted once")
+	}
 }
 
 func TestStatsFallbackWhenTimingsMissing(t *testing.T) {

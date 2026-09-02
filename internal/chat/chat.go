@@ -396,6 +396,7 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 	m.turns++
 	m.streamActive = true
 	m.streamAborting = false
+	m.lastTurnOutputTokens = 0
 	m.activityPrefix = "Generating"
 	m.runningError = nil
 	m.rebuildStatus()
@@ -547,12 +548,14 @@ func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 			if x.timing.PredictedPerSecond != nil {
 				m.predictedPerSecond = x.timing.PredictedPerSecond
 			}
-			m.totalOutputTokens += m.lastTurnOutputTokens
 		}
 		m.rebuildStatus()
 		return m, func() tea.Msg { return <-m.streamCh }
 	}
 	if x.done {
+		if m.streamActive {
+			m.totalOutputTokens += m.lastTurnOutputTokens
+		}
 		m.streamActive = false
 		m.streamAborting = false
 		m.activityPrefix = ""

@@ -153,7 +153,11 @@ func TestChatCommand(t *testing.T) {
 
 func TestListAndShowProfiles(t *testing.T) {
 	root := t.TempDir()
-	listJSON, err := run(context.Background(), []string{"ls"}, map[string]string{"OUTRIDER_HOME": root})
+	ollamaRoot := t.TempDir()
+	writeOllamaFixture(t, ollamaRoot)
+	listJSON, err := run(context.Background(), []string{"ls"}, map[string]string{
+		"OUTRIDER_HOME": root, "OLLAMA_MODELS": ollamaRoot,
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,6 +171,9 @@ func TestListAndShowProfiles(t *testing.T) {
 	if list.Profiles[0].Cache.State != "missing" {
 		t.Fatalf("first cache = %#v", list.Profiles[0].Cache)
 	}
+	if len(list.DevelopmentModels) != 1 || list.DevelopmentModels[0].Name != "granite4.2:8b" {
+		t.Fatalf("development models = %#v", list.DevelopmentModels)
+	}
 
 	showJSON, err := run(context.Background(), []string{"show", "qwen35b-mtp"}, map[string]string{"OUTRIDER_HOME": root})
 	if err != nil {
@@ -178,6 +185,32 @@ func TestListAndShowProfiles(t *testing.T) {
 	}
 	if detail.Profile.ID != "qwen35b-mtp" || detail.Profile.Runnable || detail.Profile.Speculation.Mode != "mtp" {
 		t.Fatalf("profile detail = %#v", detail)
+	}
+}
+
+func writeOllamaFixture(t *testing.T, root string) {
+	t.Helper()
+	digest := strings.Repeat("a", 64)
+	blobPath := filepath.Join(root, "blobs", "sha256-"+digest)
+	manifestPath := filepath.Join(
+		root, "manifests", "registry.ollama.ai", "library", "granite4.2", "8b",
+	)
+	if err := os.MkdirAll(filepath.Dir(blobPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	model := []byte("GGUFmodel")
+	if err := os.WriteFile(blobPath, model, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	payload := fmt.Sprintf(
+		`{"layers":[{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:%s","size":%d}]}`,
+		digest, len(model),
+	)
+	if err := os.WriteFile(manifestPath, []byte(payload), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

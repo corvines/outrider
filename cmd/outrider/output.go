@@ -6,6 +6,7 @@ import (
 	"github.com/corvines/outrider/internal/admission"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/manifest"
+	"github.com/corvines/outrider/internal/ollamacache"
 )
 
 type releaseOutput struct {
@@ -41,7 +42,8 @@ type profileSummaryOutput struct {
 }
 
 type profileListOutput struct {
-	Profiles []profileSummaryOutput `json:"profiles"`
+	Profiles          []profileSummaryOutput `json:"profiles"`
+	DevelopmentModels []ollamacache.Model    `json:"developmentModels"`
 }
 
 type profileDetailOutput struct {

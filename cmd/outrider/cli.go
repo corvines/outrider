@@ -14,6 +14,7 @@ import (
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
+	"github.com/corvines/outrider/internal/ollamacache"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 )
 
@@ -121,6 +122,14 @@ func runWithOptions(
 				return "", err
 			}
 			output.Profiles = append(output.Profiles, summary)
+		}
+		ollamaRoot, err := ollamacache.DefaultRoot(environment["HOME"], environment["OLLAMA_MODELS"])
+		if err != nil {
+			return "", err
+		}
+		output.DevelopmentModels, err = ollamacache.Discover(ollamaRoot)
+		if err != nil {
+			return "", err
 		}
 		return encodeOutput(output)
 	case "show":

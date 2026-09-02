@@ -29,11 +29,16 @@ OUTRIDER_PORT.
 `
 
 type runPreparation struct {
-	Profile   manifest.Profile
-	Plan      manifest.Plan
-	Baseline  runnerprocess.Status
-	Admission admission.Report
-	StartedAt time.Time
+	Profile              manifest.Profile
+	Plan                 manifest.Plan
+	Baseline             runnerprocess.Status
+	Admission            admission.Report
+	StartedAt            time.Time
+	RuntimePreparationMS float64
+	ModelPreparationMS   float64
+	RuntimeDownloadMS    float64
+	ModelDownloadMS      float64
+	TotalReadyMS         float64
 }
 
 type runSession struct {
@@ -43,7 +48,43 @@ type runSession struct {
 	OwnsProcess bool
 }
 
+type runOptions struct {
+	Progress llama.ProgressFunc
+}
+
+type downloadTracker struct {
+	forward llama.ProgressFunc
+	starts  map[string]time.Time
+	totalMS float64
+}
+
+func newDownloadTracker(forward llama.ProgressFunc) *downloadTracker {
+	return &downloadTracker{forward: forward, starts: make(map[string]time.Time)}
+}
+
+func (tracker *downloadTracker) report(progress llama.DownloadProgress) {
+	if _, exists := tracker.starts[progress.Name]; !exists {
+		tracker.starts[progress.Name] = time.Now()
+	}
+	if tracker.forward != nil {
+		tracker.forward(progress)
+	}
+	if progress.Done {
+		tracker.totalMS += elapsedMilliseconds(tracker.starts[progress.Name])
+		delete(tracker.starts, progress.Name)
+	}
+}
+
 func run(ctx context.Context, argv []string, environment map[string]string) (string, error) {
+	return runWithOptions(ctx, argv, environment, runOptions{})
+}
+
+func runWithOptions(
+	ctx context.Context,
+	argv []string,
+	environment map[string]string,
+	options runOptions,
+) (string, error) {
 	var command string
 	if len(argv) > 0 {
 		command = argv[0]
@@ -81,7 +122,7 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 		if len(argv) != 2 {
 			return "", usageError("up expects exactly one runnable profile id")
 		}
-		session, err := startSession(ctx, argv[1], environment)
+		session, err := startSession(ctx, argv[1], environment, options)
 		if err != nil {
 			return "", err
 		}
@@ -90,12 +131,12 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 		if len(argv) != 1 {
 			return "", usageError("smoke does not accept a preset id")
 		}
-		return runDemo(ctx, "tiny", environment)
+		return runDemo(ctx, "tiny", environment, options)
 	case "demo":
 		if len(argv) != 2 {
 			return "", usageError("demo expects exactly one runnable profile id")
 		}
-		return runDemo(ctx, argv[1], environment)
+		return runDemo(ctx, argv[1], environment, options)
 	case "status", "down":
 		if len(argv) != 1 {
 			return "", usageError(fmt.Sprintf("%s does not accept a profile id", command))
@@ -127,7 +168,12 @@ func activeState(environment map[string]string) (manifest.StatePaths, error) {
 	return manifest.Paths(environment["OUTRIDER_HOME"], profile, "")
 }
 
-func startSession(ctx context.Context, profileID string, environment map[string]string) (runSession, error) {
+func startSession(
+	ctx context.Context,
+	profileID string,
+	environment map[string]string,
+	options runOptions,
+) (runSession, error) {
 	profile, err := runnableProfile(profileID)
 	if err != nil {
 		return runSession{}, err
@@ -142,6 +188,7 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	}
 	defer lock.Release()
 	startedAt := time.Now()
+	tracker := newDownloadTracker(options.Progress)
 	baseline, err := runnerprocess.GetStatus(ctx, initialPlan)
 	if err != nil {
 		return runSession{}, err
@@ -165,16 +212,20 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 		return runSession{
 			Preparation: runPreparation{
 				Profile: profile, Plan: initialPlan, Baseline: baseline, Admission: report, StartedAt: startedAt,
+				TotalReadyMS: elapsedMilliseconds(startedAt),
 			},
 			Status: status,
 		}, nil
 	}
+	runtimeStartedAt := time.Now()
 	executable, err := llama.EnsureServer(ctx, llama.EnsureServerOptions{
-		StateRoot: initialPlan.State.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"],
+		StateRoot: initialPlan.State.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"], Progress: tracker.report,
 	})
 	if err != nil {
 		return runSession{}, err
 	}
+	runtimePreparationMS := elapsedMilliseconds(runtimeStartedAt)
+	runtimeDownloadMS := tracker.totalMS
 	plan, err := resolvePlan(profileID, environment, true, executable)
 	if err != nil {
 		return runSession{}, err
@@ -183,9 +234,12 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	if report.Blocking() {
 		return runSession{}, &admission.Error{Report: report}
 	}
-	if _, err := llama.EnsureModelCached(ctx, profile, plan, llama.EnsureModelOptions{}); err != nil {
+	modelStartedAt := time.Now()
+	if _, err := llama.EnsureModelCached(ctx, profile, plan, llama.EnsureModelOptions{Progress: tracker.report}); err != nil {
 		return runSession{}, err
 	}
+	modelPreparationMS := elapsedMilliseconds(modelStartedAt)
+	modelDownloadMS := tracker.totalMS - runtimeDownloadMS
 	status, err := runnerprocess.StartWithLock(ctx, plan, runnerprocess.StartOptions{}, lock)
 	if err != nil {
 		return runSession{}, err
@@ -193,18 +247,28 @@ func startSession(ctx context.Context, profileID string, environment map[string]
 	session := runSession{
 		Preparation: runPreparation{
 			Profile: profile, Plan: plan, Baseline: baseline, Admission: report, StartedAt: startedAt,
+			RuntimePreparationMS: runtimePreparationMS, ModelPreparationMS: modelPreparationMS,
+			RuntimeDownloadMS: runtimeDownloadMS, ModelDownloadMS: modelDownloadMS,
+			TotalReadyMS: elapsedMilliseconds(startedAt),
 		},
 		Status: status, OwnsProcess: status.Detail == "started",
 	}
 	if session.OwnsProcess {
-		coldStart := elapsedMilliseconds(startedAt)
-		session.ColdStartMS = &coldStart
+		if status.Timings != nil {
+			coldStart := status.Timings.TimeToHealthMS
+			session.ColdStartMS = &coldStart
+		}
 	}
 	return session, nil
 }
 
-func runDemo(ctx context.Context, profileID string, environment map[string]string) (string, error) {
-	session, operationErr := startSession(ctx, profileID, environment)
+func runDemo(
+	ctx context.Context,
+	profileID string,
+	environment map[string]string,
+	options runOptions,
+) (string, error) {
+	session, operationErr := startSession(ctx, profileID, environment, options)
 	var output string
 	if operationErr == nil {
 		requestStartedAt := time.Now()

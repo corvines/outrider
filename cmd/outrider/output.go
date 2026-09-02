@@ -106,7 +106,7 @@ func newUpOutput(session runSession) upOutput {
 		Argv:      append([]string{session.Preparation.Plan.Executable}, session.Preparation.Plan.Args...),
 		Admission: session.Preparation.Admission,
 	}
-	if status.Timings != nil || session.ColdStartMS != nil {
+	if status.Timings != nil || session.ColdStartMS != nil || session.Preparation.TotalReadyMS > 0 {
 		output.Timings = make(map[string]float64)
 		if status.Timings != nil {
 			output.Timings["timeToHealthMs"] = status.Timings.TimeToHealthMS
@@ -114,6 +114,7 @@ func newUpOutput(session runSession) upOutput {
 		if session.ColdStartMS != nil {
 			output.Timings["coldStartMs"] = *session.ColdStartMS
 		}
+		addPreparationTimings(output.Timings, session.Preparation)
 	}
 	return output
 }
@@ -131,6 +132,7 @@ func newDemoOutput(
 	if session.Status.Timings != nil {
 		timings["timeToHealthMs"] = session.Status.Timings.TimeToHealthMS
 	}
+	addPreparationTimings(timings, session.Preparation)
 	cleanup := "preserved-existing"
 	if shouldCleanup(session) {
 		cleanup = "stopped"
@@ -147,4 +149,22 @@ func newDemoOutput(
 		output.GenerationTimingSource = generationTiming.Source
 	}
 	return output
+}
+
+func addPreparationTimings(timings map[string]float64, preparation runPreparation) {
+	if preparation.RuntimePreparationMS > 0 {
+		timings["runtimePreparationMs"] = preparation.RuntimePreparationMS
+	}
+	if preparation.ModelPreparationMS > 0 {
+		timings["modelPreparationMs"] = preparation.ModelPreparationMS
+	}
+	if preparation.RuntimeDownloadMS > 0 {
+		timings["runtimeDownloadMs"] = preparation.RuntimeDownloadMS
+	}
+	if preparation.ModelDownloadMS > 0 {
+		timings["modelDownloadMs"] = preparation.ModelDownloadMS
+	}
+	if preparation.TotalReadyMS > 0 {
+		timings["totalReadyMs"] = preparation.TotalReadyMS
+	}
 }

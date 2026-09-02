@@ -249,7 +249,10 @@ func TestDownloadRetriesTransientResponses(t *testing.T) {
 	defer server.Close()
 
 	destination := filepath.Join(t.TempDir(), "download")
-	if err := DownloadFile(context.Background(), server.URL, destination); err != nil {
+	progress := make([]DownloadProgress, 0)
+	if err := DownloadFileWithProgress(context.Background(), server.URL, destination, func(update DownloadProgress) {
+		progress = append(progress, update)
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if attempts != 3 {
@@ -261,6 +264,10 @@ func TestDownloadRetriesTransientResponses(t *testing.T) {
 	}
 	if string(contents) != "complete" {
 		t.Fatalf("download = %q", contents)
+	}
+	last := progress[len(progress)-1]
+	if !last.Done || last.Downloaded != int64(len(contents)) || last.Total != int64(len(contents)) {
+		t.Fatalf("last progress = %#v", last)
 	}
 }
 

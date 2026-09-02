@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/corvines/outrider/internal/manifest"
 )
@@ -21,6 +22,17 @@ type resumeMetadata struct {
 	ETag         string `json:"etag,omitempty"`
 	LastModified string `json:"lastModified,omitempty"`
 }
+
+type DownloadProgress struct {
+	Name           string
+	Downloaded     int64
+	Total          int64
+	BytesPerSecond float64
+	ETA            time.Duration
+	Done           bool
+}
+
+type ProgressFunc func(DownloadProgress)
 
 func ModelDownloadURL(profile manifest.Profile) (string, error) {
 	if profile.Model.Repo == "" || profile.Model.File == "" {
@@ -35,9 +47,18 @@ func ModelDownloadURL(profile manifest.Profile) (string, error) {
 }
 
 func DownloadFile(ctx context.Context, sourceURL string, destination string) error {
+	return DownloadFileWithProgress(ctx, sourceURL, destination, nil)
+}
+
+func DownloadFileWithProgress(
+	ctx context.Context,
+	sourceURL string,
+	destination string,
+	progress ProgressFunc,
+) error {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		lastErr = downloadAttempt(ctx, http.DefaultClient, sourceURL, destination)
+		lastErr = downloadAttempt(ctx, http.DefaultClient, sourceURL, destination, progress)
 		if lastErr == nil {
 			return nil
 		}
@@ -48,7 +69,13 @@ func DownloadFile(ctx context.Context, sourceURL string, destination string) err
 	return lastErr
 }
 
-func downloadAttempt(ctx context.Context, client *http.Client, sourceURL string, destination string) error {
+func downloadAttempt(
+	ctx context.Context,
+	client *http.Client,
+	sourceURL string,
+	destination string,
+	progress ProgressFunc,
+) error {
 	offset, metadata := resumableOffset(destination, sourceURL)
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
@@ -108,7 +135,8 @@ func downloadAttempt(ctx context.Context, client *http.Client, sourceURL string,
 	if err != nil {
 		return err
 	}
-	_, copyErr := io.Copy(file, response.Body)
+	reporter := newProgressReader(response.Body, destination, offset, total, progress)
+	_, copyErr := io.Copy(file, reporter)
 	if err := file.Sync(); err != nil {
 		file.Close()
 		return err
@@ -119,6 +147,7 @@ func downloadAttempt(ctx context.Context, client *http.Client, sourceURL string,
 	if copyErr != nil {
 		return copyErr
 	}
+	reporter.finish()
 	if total >= 0 {
 		info, err := os.Stat(destination)
 		if err != nil {
@@ -132,6 +161,67 @@ func downloadAttempt(ctx context.Context, client *http.Client, sourceURL string,
 		return err
 	}
 	return nil
+}
+
+type progressReader struct {
+	reader     io.Reader
+	name       string
+	offset     int64
+	total      int64
+	read       int64
+	startedAt  time.Time
+	lastReport time.Time
+	progress   ProgressFunc
+}
+
+func newProgressReader(
+	reader io.Reader,
+	destination string,
+	offset int64,
+	total int64,
+	progress ProgressFunc,
+) *progressReader {
+	now := time.Now()
+	reporter := &progressReader{
+		reader: reader, name: strings.TrimSuffix(filepath.Base(destination), ".part"),
+		offset: offset, total: total, startedAt: now, lastReport: now, progress: progress,
+	}
+	reporter.report(false)
+	return reporter
+}
+
+func (r *progressReader) Read(buffer []byte) (int, error) {
+	count, err := r.reader.Read(buffer)
+	r.read += int64(count)
+	if time.Since(r.lastReport) >= 100*time.Millisecond {
+		r.report(false)
+		r.lastReport = time.Now()
+	}
+	return count, err
+}
+
+func (r *progressReader) finish() {
+	r.report(true)
+}
+
+func (r *progressReader) report(done bool) {
+	if r.progress == nil {
+		return
+	}
+	elapsed := time.Since(r.startedAt).Seconds()
+	rate := float64(0)
+	if elapsed > 0 {
+		rate = float64(r.read) / elapsed
+	}
+	downloaded := r.offset + r.read
+	eta := time.Duration(0)
+	if rate > 0 && r.total > downloaded {
+		eta = time.Duration(float64(r.total-downloaded)/rate) * time.Second
+	}
+	r.progress(DownloadProgress{
+		Name: r.name, Downloaded: downloaded, Total: r.total,
+		BytesPerSecond: rate, ETA: eta, Done: done,
+	})
 }
 
 func resumableOffset(destination string, sourceURL string) (int64, resumeMetadata) {

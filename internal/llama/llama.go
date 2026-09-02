@@ -36,11 +36,13 @@ type EnsureServerOptions struct {
 	Release            manifest.Release
 	Platform           Platform
 	Download           Downloader
+	Progress           ProgressFunc
 }
 
 type EnsureModelOptions struct {
 	AllowPreset func(string) bool
 	Download    Downloader
+	Progress    ProgressFunc
 }
 
 func EnsureServer(ctx context.Context, options EnsureServerOptions) (string, error) {
@@ -89,7 +91,13 @@ func EnsureServer(ctx context.Context, options EnsureServerOptions) (string, err
 		return "", runnerError("could not create download directory", err)
 	}
 	archive := filepath.Join(archiveDirectory, release.Asset)
-	if err := ensureArchive(ctx, archive, release, options.Download); err != nil {
+	download := options.Download
+	if download == nil && options.Progress != nil {
+		download = func(ctx context.Context, sourceURL string, destination string) error {
+			return DownloadFileWithProgress(ctx, sourceURL, destination, options.Progress)
+		}
+	}
+	if err := ensureArchive(ctx, archive, release, download); err != nil {
 		return "", err
 	}
 	if err := installArchive(archive, releaseParent, releaseDirectory, release); err != nil {
@@ -150,7 +158,9 @@ func EnsureModelCached(
 
 	download := options.Download
 	if download == nil {
-		download = DownloadFile
+		download = func(ctx context.Context, sourceURL string, destination string) error {
+			return DownloadFileWithProgress(ctx, sourceURL, destination, options.Progress)
+		}
 	}
 	modelURL, err := ModelDownloadURL(profile)
 	if err != nil {

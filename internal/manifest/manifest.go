@@ -158,6 +158,7 @@ type StatePaths struct {
 	Model      string `json:"model"`
 	Run        string `json:"run"`
 	PID        string `json:"pid"`
+	Lock       string `json:"lock"`
 	Log        string `json:"log"`
 	Executable string `json:"executable"`
 }

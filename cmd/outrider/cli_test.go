@@ -55,7 +55,7 @@ func TestStatusAndDownDoNotPrepareRuntime(t *testing.T) {
 	environment := map[string]string{
 		"OUTRIDER_HOME": t.TempDir(), "LLAMA_SERVER_BIN": "/missing/llama-server",
 	}
-	for _, argv := range [][]string{{"status"}, {"down"}, {"status", "qwen3-1.7b"}, {"down", "qwen3-1.7b"}} {
+	for _, argv := range [][]string{{"status"}, {"down"}} {
 		output, err := run(context.Background(), argv, environment)
 		if err != nil {
 			t.Fatalf("%v: %v", argv, err)
@@ -77,6 +77,8 @@ func TestUsageErrors(t *testing.T) {
 		{"up", "qwen35b-mtp"},
 		{"smoke", "tiny"},
 		{"demo"},
+		{"status", "tiny"},
+		{"down", "qwen3-1.7b"},
 		{"status", "tiny", "extra"},
 		{"missing"},
 	} {

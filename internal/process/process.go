@@ -3,9 +3,10 @@ package process
 import (
 	"context"
 	"fmt"
+	"net"
 	"os"
 	"os/exec"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,6 +27,7 @@ const (
 type Status struct {
 	Kind     StatusKind `json:"kind"`
 	PID      int        `json:"pid,omitempty"`
+	Preset   string     `json:"preset,omitempty"`
 	Endpoint string     `json:"endpoint"`
 	Health   *bool      `json:"health,omitempty"`
 	Detail   string     `json:"detail,omitempty"`
@@ -50,8 +52,7 @@ type StopOptions struct {
 }
 
 func Start(ctx context.Context, plan manifest.Plan, options StartOptions) (Status, error) {
-	lockPath := lifecycleLockPath(plan.State.Run)
-	lock, err := AcquireLifecycleLock(ctx, lockPath)
+	lock, err := AcquireLifecycleLock(ctx, plan.State.Lock)
 	if err != nil {
 		return Status{}, err
 	}
@@ -65,7 +66,7 @@ func StartWithLock(
 	options StartOptions,
 	lock *LifecycleLock,
 ) (Status, error) {
-	if err := lock.assertPath(lifecycleLockPath(plan.State.Run)); err != nil {
+	if err := lock.assertPath(plan.State.Lock); err != nil {
 		return Status{}, err
 	}
 	return start(ctx, plan, options)
@@ -97,7 +98,7 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 			}
 			health := true
 			return Status{
-				Kind: StatusRunning, PID: record.PID, Endpoint: plan.Endpoint,
+				Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint,
 				Health: &health, LogFile: plan.State.Log, Detail: "already running",
 			}, nil
 		}
@@ -105,7 +106,10 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	if err := ctx.Err(); err != nil {
 		return Status{}, runnerError("runner start aborted", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(plan.State.PID), 0o700); err != nil {
+	if err := assertPortAvailable(plan); err != nil {
+		return Status{}, err
+	}
+	if err := os.MkdirAll(plan.State.Run, 0o700); err != nil {
 		return Status{}, runnerError("could not create run directory", err)
 	}
 	logFile, err := os.OpenFile(plan.State.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
@@ -180,10 +184,25 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	}
 	health := true
 	return Status{
-		Kind: StatusRunning, PID: record.PID, Endpoint: plan.Endpoint,
+		Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint,
 		Health: &health, LogFile: plan.State.Log, Detail: "started",
 		Timings: &Timings{TimeToHealthMS: elapsedMilliseconds(launchStartedAt)},
 	}, nil
+}
+
+func assertPortAvailable(plan manifest.Plan) error {
+	address := net.JoinHostPort(plan.Host, strconv.Itoa(plan.Port))
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		return runnerErrorf(
+			"cannot start %s: %s is already in use and no matching active record owns it",
+			plan.Profile.ID, address,
+		)
+	}
+	if err := listener.Close(); err != nil {
+		return runnerError("could not release the endpoint admission probe", err)
+	}
+	return nil
 }
 
 func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
@@ -197,19 +216,19 @@ func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
 	observed := inspectProcess(record.PID)
 	if observed == nil {
 		return Status{
-			Kind: StatusStale, PID: record.PID, Endpoint: plan.Endpoint, LogFile: plan.State.Log,
+			Kind: StatusStale, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, LogFile: record.LogFile,
 			Detail: fmt.Sprintf("PID file remains but PID %d is no longer running", record.PID),
 		}, nil
 	}
 	if !IdentityMatches(*record, *observed) {
 		return Status{
-			Kind: StatusMismatched, PID: record.PID, Endpoint: plan.Endpoint, LogFile: plan.State.Log,
+			Kind: StatusMismatched, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, LogFile: record.LogFile,
 			Detail: identityMismatchError(*record, *observed).Error(),
 		}, nil
 	}
 	if !recordMatchesPlan(*record, plan) {
 		return Status{
-			Kind: StatusMismatched, PID: record.PID, Endpoint: plan.Endpoint, LogFile: plan.State.Log,
+			Kind: StatusMismatched, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, LogFile: record.LogFile,
 			Detail: planMismatchError(*record, plan).Error(),
 		}, nil
 	}
@@ -219,19 +238,70 @@ func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
 		detail = "healthy"
 	}
 	return Status{
-		Kind: StatusRunning, PID: record.PID, Endpoint: plan.Endpoint, Health: &check.OK,
+		Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, Health: &check.OK,
 		Detail:  detail,
 		LogFile: plan.State.Log,
 	}, nil
 }
 
+func GetActiveStatus(ctx context.Context, state manifest.StatePaths) (Status, error) {
+	record, err := ReadProcessRecord(state.PID)
+	if err != nil {
+		return Status{}, err
+	}
+	if record == nil {
+		return Status{Kind: StatusStopped, Endpoint: "", LogFile: ""}, nil
+	}
+	endpointURL := processEndpoint(*record)
+	observed := inspectProcess(record.PID)
+	if observed == nil {
+		return Status{
+			Kind: StatusStale, PID: record.PID, Preset: record.Preset,
+			Endpoint: endpointURL, LogFile: record.LogFile,
+			Detail: fmt.Sprintf("active record remains but PID %d is no longer running", record.PID),
+		}, nil
+	}
+	if !IdentityMatches(*record, *observed) {
+		return Status{
+			Kind: StatusMismatched, PID: record.PID, Preset: record.Preset,
+			Endpoint: endpointURL, LogFile: record.LogFile,
+			Detail: identityMismatchError(*record, *observed).Error(),
+		}, nil
+	}
+	check := endpoint.CheckHealth(ctx, endpointURL+"/health", 2*time.Second)
+	detail := "process running but endpoint is not healthy"
+	if check.OK {
+		detail = "healthy"
+	}
+	return Status{
+		Kind: StatusRunning, PID: record.PID, Preset: record.Preset,
+		Endpoint: endpointURL, Health: &check.OK, Detail: detail, LogFile: record.LogFile,
+	}, nil
+}
+
 func Stop(ctx context.Context, plan manifest.Plan, options StopOptions) (Status, error) {
-	lock, err := AcquireLifecycleLock(ctx, lifecycleLockPath(plan.State.Run))
+	lock, err := AcquireLifecycleLock(ctx, plan.State.Lock)
 	if err != nil {
 		return Status{}, err
 	}
 	defer lock.Release()
 	return stop(plan, options)
+}
+
+func StopActive(ctx context.Context, state manifest.StatePaths, options StopOptions) (Status, error) {
+	lock, err := AcquireLifecycleLock(ctx, state.Lock)
+	if err != nil {
+		return Status{}, err
+	}
+	defer lock.Release()
+	record, err := ReadProcessRecord(state.PID)
+	if err != nil {
+		return Status{}, err
+	}
+	if record == nil {
+		return Status{Kind: StatusStopped, Detail: "already stopped"}, nil
+	}
+	return stopRecord(state.PID, *record, options)
 }
 
 func stop(plan manifest.Plan, options StopOptions) (Status, error) {
@@ -244,19 +314,25 @@ func stop(plan manifest.Plan, options StopOptions) (Status, error) {
 			Kind: StatusStopped, Endpoint: plan.Endpoint, LogFile: plan.State.Log, Detail: "already stopped",
 		}, nil
 	}
+	return stopRecord(plan.State.PID, *record, options)
+}
+
+func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (Status, error) {
+	endpointURL := processEndpoint(record)
 	observed := inspectProcess(record.PID)
 	if observed == nil {
-		if err := os.Remove(plan.State.PID); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
 			return Status{}, runnerError("could not remove stale process record", err)
 		}
 		return Status{
-			Kind: StatusStopped, Endpoint: plan.Endpoint, LogFile: plan.State.Log, Detail: "removed stale PID record",
+			Kind: StatusStopped, Preset: record.Preset, Endpoint: endpointURL,
+			LogFile: record.LogFile, Detail: "removed stale process record",
 		}, nil
 	}
-	if !IdentityMatches(*record, *observed) {
-		return Status{}, identityMismatchError(*record, *observed)
+	if !IdentityMatches(record, *observed) {
+		return Status{}, identityMismatchError(record, *observed)
 	}
-	if err := sendSignal(*record, syscall.SIGTERM); err != nil {
+	if err := sendSignal(record, syscall.SIGTERM); err != nil {
 		return Status{}, err
 	}
 	wait := options.Wait
@@ -272,10 +348,10 @@ func stop(plan manifest.Plan, options StopOptions) (Status, error) {
 		time.Sleep(min(poll, max(time.Millisecond, time.Until(deadline))))
 		observed = inspectProcess(record.PID)
 		if observed == nil {
-			return stoppedAfterRemovingRecord(plan, "stopped")
+			return stoppedAfterRemovingRecord(recordPath, record, "stopped")
 		}
-		if !IdentityMatches(*record, *observed) {
-			return Status{}, identityMismatchError(*record, *observed)
+		if !IdentityMatches(record, *observed) {
+			return Status{}, identityMismatchError(record, *observed)
 		}
 		if time.Now().After(deadline) {
 			break
@@ -283,19 +359,19 @@ func stop(plan manifest.Plan, options StopOptions) (Status, error) {
 	}
 	observed = inspectProcess(record.PID)
 	if observed == nil {
-		return stoppedAfterRemovingRecord(plan, "stopped")
+		return stoppedAfterRemovingRecord(recordPath, record, "stopped")
 	}
-	if !IdentityMatches(*record, *observed) {
-		return Status{}, identityMismatchError(*record, *observed)
+	if !IdentityMatches(record, *observed) {
+		return Status{}, identityMismatchError(record, *observed)
 	}
-	if err := sendSignal(*record, syscall.SIGKILL); err != nil {
+	if err := sendSignal(record, syscall.SIGKILL); err != nil {
 		return Status{}, err
 	}
 	time.Sleep(min(poll, 250*time.Millisecond))
 	if inspectProcess(record.PID) != nil {
-		return Status{}, runnerErrorf("PID %d did not stop; leaving %s for inspection", record.PID, plan.State.PID)
+		return Status{}, runnerErrorf("PID %d did not stop; leaving %s for inspection", record.PID, recordPath)
 	}
-	return stoppedAfterRemovingRecord(plan, "stopped with SIGKILL after SIGTERM timeout")
+	return stoppedAfterRemovingRecord(recordPath, record, "stopped with SIGKILL after SIGTERM timeout")
 }
 
 func sendSignal(record ProcessRecord, signal syscall.Signal) error {
@@ -339,11 +415,18 @@ func waitForProcessObservation(ctx context.Context, pid int) *ObservedProcess {
 	return nil
 }
 
-func stoppedAfterRemovingRecord(plan manifest.Plan, detail string) (Status, error) {
-	if err := os.Remove(plan.State.PID); err != nil && !os.IsNotExist(err) {
+func stoppedAfterRemovingRecord(recordPath string, record ProcessRecord, detail string) (Status, error) {
+	if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
 		return Status{}, runnerError("could not remove process record", err)
 	}
-	return Status{Kind: StatusStopped, Endpoint: plan.Endpoint, LogFile: plan.State.Log, Detail: detail}, nil
+	return Status{
+		Kind: StatusStopped, Preset: record.Preset, Endpoint: processEndpoint(record),
+		LogFile: record.LogFile, Detail: detail,
+	}, nil
+}
+
+func processEndpoint(record ProcessRecord) string {
+	return fmt.Sprintf("http://%s:%d", manifest.DefaultHost, record.Port)
 }
 
 func healthOptions(options StartOptions) endpoint.WaitOptions {

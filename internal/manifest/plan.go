@@ -156,9 +156,11 @@ func Paths(root string, profile Profile, cwd string) (StatePaths, error) {
 		model = filepath.Join(models, profile.ID+"-"+profile.Model.File)
 	}
 	run := filepath.Join(root, "runs", profile.ID)
+	runs := filepath.Join(root, "runs")
 	return StatePaths{
 		Root: root, Models: models, Model: model, Run: run,
-		PID: filepath.Join(run, "pid.json"), Log: filepath.Join(run, "server.log"),
+		PID: filepath.Join(runs, "active.json"), Lock: filepath.Join(runs, "lifecycle.lock"),
+		Log:        filepath.Join(run, "server.log"),
 		Executable: filepath.Join(root, "llama.cpp", LlamaRelease.Tag, LlamaRelease.Directory, "llama-server"),
 	}, nil
 }

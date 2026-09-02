@@ -173,6 +173,51 @@ func TestStartRefusesOwnedProcessWithDifferentPlan(t *testing.T) {
 	}
 }
 
+func TestStartRefusesPortOwnedWithoutActiveRecord(t *testing.T) {
+	plan := fakeServerPlan(t, false)
+	listener, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", plan.Port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	if _, err := Start(context.Background(), plan, StartOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "already in use and no matching active record owns it") {
+		t.Fatalf("start error = %v", err)
+	}
+	if record, err := ReadProcessRecord(plan.State.PID); err != nil || record != nil {
+		t.Fatalf("active record = %#v, error = %v", record, err)
+	}
+}
+
+func TestProfilesShareOneActiveRecordAndLifecycleLock(t *testing.T) {
+	plan := fakeServerPlan(t, false)
+	other := plan
+	other.Profile.ID = "other"
+	other.State.Run = filepath.Join(other.State.Root, "runs", other.Profile.ID)
+	other.State.Log = filepath.Join(other.State.Run, "server.log")
+	if other.State.PID != plan.State.PID || other.State.Lock != plan.State.Lock {
+		t.Fatalf("global lifecycle paths differ: %#v and %#v", plan.State, other.State)
+	}
+	t.Cleanup(func() { _, _ = StopActive(context.Background(), plan.State, StopOptions{}) })
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Start(context.Background(), other, StartOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "does not match the requested other plan") {
+		t.Fatalf("other profile start error = %v", err)
+	}
+	active, err := GetActiveStatus(context.Background(), other.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if active.Kind != StatusRunning || active.PID != started.PID || active.Preset != plan.Profile.ID {
+		t.Fatalf("active status = %#v", active)
+	}
+}
+
 func TestLifecycleLockWaitHonorsCancellation(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "run", "up.lock")
 	first, err := AcquireLifecycleLock(context.Background(), path)

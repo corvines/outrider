@@ -22,13 +22,14 @@ type modelOutput struct {
 }
 
 type stateOutput struct {
-	Root         string `json:"root"`
-	Binary       string `json:"binary"`
-	ModelCache   string `json:"modelCache"`
-	Model        string `json:"model"`
-	RunDirectory string `json:"runDirectory"`
-	PIDFile      string `json:"pidFile"`
-	LogFile      string `json:"logFile"`
+	Root          string `json:"root"`
+	Binary        string `json:"binary"`
+	ModelCache    string `json:"modelCache"`
+	Model         string `json:"model"`
+	RunDirectory  string `json:"runDirectory"`
+	PIDFile       string `json:"pidFile"`
+	LifecycleLock string `json:"lifecycleLock"`
+	LogFile       string `json:"logFile"`
 }
 
 type planOutput struct {
@@ -79,7 +80,8 @@ func newPlanOutput(plan manifest.Plan) planOutput {
 		Port: plan.Port, Executable: plan.Executable, Model: newModelOutput(plan.Profile.Model),
 		State: stateOutput{
 			Root: plan.State.Root, Binary: plan.State.Executable, ModelCache: plan.State.Models,
-			Model: plan.State.Model, RunDirectory: plan.State.Run, PIDFile: plan.State.PID, LogFile: plan.State.Log,
+			Model: plan.State.Model, RunDirectory: plan.State.Run, PIDFile: plan.State.PID,
+			LifecycleLock: plan.State.Lock, LogFile: plan.State.Log,
 		},
 		Endpoint: plan.Endpoint, HealthEndpoint: plan.HealthEndpoint,
 		Argv: append([]string{plan.Executable}, plan.Args...),

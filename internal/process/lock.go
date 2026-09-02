@@ -52,7 +52,7 @@ func AcquireLifecycleLock(ctx context.Context, path string) (*LifecycleLock, err
 }
 
 func AcquireUpLock(ctx context.Context, plan manifest.Plan) (*LifecycleLock, error) {
-	return AcquireLifecycleLock(ctx, lifecycleLockPath(plan.State.Run))
+	return AcquireLifecycleLock(ctx, plan.State.Lock)
 }
 
 func (lock *LifecycleLock) Release() error {
@@ -81,8 +81,4 @@ func (lock *LifecycleLock) assertPath(path string) error {
 		return runnerErrorf("lifecycle lock does not own %s", path)
 	}
 	return nil
-}
-
-func lifecycleLockPath(runDirectory string) string {
-	return filepath.Join(runDirectory, "up.lock")
 }

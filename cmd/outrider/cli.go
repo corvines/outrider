@@ -20,8 +20,8 @@ const usage = `outrider: loopback llama.cpp runner
   outrider up <profile>
   outrider smoke
   outrider demo <profile>
-  outrider status [profile]
-  outrider down [profile]
+  outrider status
+  outrider down
 
 Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME,
 OUTRIDER_PORT.
@@ -76,25 +76,18 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 		}
 		return runDemo(ctx, argv[1], environment)
 	case "status", "down":
-		if len(argv) < 1 || len(argv) > 2 {
-			return "", usageError(fmt.Sprintf("%s accepts at most one profile id", command))
+		if len(argv) != 1 {
+			return "", usageError(fmt.Sprintf("%s does not accept a profile id", command))
 		}
-		profileID := "tiny"
-		if len(argv) == 2 {
-			profileID = argv[1]
-		}
-		if _, err := runnableProfile(profileID); err != nil {
-			return "", err
-		}
-		plan, err := resolvePlan(profileID, environment, true, "")
+		state, err := activeState(environment)
 		if err != nil {
 			return "", err
 		}
 		var status runnerprocess.Status
 		if command == "status" {
-			status, err = runnerprocess.GetStatus(ctx, plan)
+			status, err = runnerprocess.GetActiveStatus(ctx, state)
 		} else {
-			status, err = runnerprocess.Stop(ctx, plan, runnerprocess.StopOptions{})
+			status, err = runnerprocess.StopActive(ctx, state, runnerprocess.StopOptions{})
 		}
 		if err != nil {
 			return "", err
@@ -103,6 +96,14 @@ func run(ctx context.Context, argv []string, environment map[string]string) (str
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
 	}
+}
+
+func activeState(environment map[string]string) (manifest.StatePaths, error) {
+	profile, err := manifest.Get("tiny")
+	if err != nil {
+		return manifest.StatePaths{}, err
+	}
+	return manifest.Paths(environment["OUTRIDER_HOME"], profile, "")
 }
 
 func startSession(ctx context.Context, profileID string, environment map[string]string) (runSession, error) {

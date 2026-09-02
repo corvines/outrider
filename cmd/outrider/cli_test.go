@@ -102,16 +102,27 @@ func TestProcessCommandsDoNotPrepareRuntime(t *testing.T) {
 	environment := map[string]string{
 		"OUTRIDER_HOME": t.TempDir(), "LLAMA_SERVER_BIN": "/missing/llama-server",
 	}
-	for _, argv := range [][]string{{"ps"}, {"stop"}, {"status"}, {"down"}} {
+	output, err := run(context.Background(), []string{"ps"}, environment)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var processStatus map[string]any
+	if err := json.Unmarshal([]byte(output), &processStatus); err != nil {
+		t.Fatal(err)
+	}
+	if processStatus["kind"] != "stopped" {
+		t.Fatalf("ps status = %#v", processStatus)
+	}
+	for _, argv := range [][]string{{"status"}, {"stop"}, {"down"}} {
 		output, err := run(context.Background(), argv, environment)
 		if err != nil {
 			t.Fatalf("%v: %v", argv, err)
 		}
-		var status map[string]any
+		var status serviceStatusOutput
 		if err := json.Unmarshal([]byte(output), &status); err != nil {
 			t.Fatal(err)
 		}
-		if status["kind"] != "stopped" {
+		if status.Gateway.Kind != "stopped" || status.Model.Kind != "stopped" {
 			t.Fatalf("%v status = %#v", argv, status)
 		}
 	}
@@ -123,7 +134,7 @@ func TestLifecycleCommandAliases(t *testing.T) {
 		"serve":  "serve",
 		"up":     "serve",
 		"ps":     "ps",
-		"status": "ps",
+		"status": "status",
 		"stop":   "stop",
 		"down":   "stop",
 	}
@@ -272,6 +283,9 @@ func TestUsageErrors(t *testing.T) {
 		{"ls", "extra"},
 		{"show"},
 		{"pull"},
+		{"start", "qwen35b-mtp"},
+		{"use"},
+		{"status", "extra"},
 		{"run"},
 		{"chat", "unexpected"},
 		{"chat", "--missing"},

@@ -42,6 +42,27 @@ func TestHumanStatusShowsHealthAndMemory(t *testing.T) {
 	}
 }
 
+func TestHumanServiceStatusShowsGatewayAndModel(t *testing.T) {
+	health := true
+	text, err := humanOutput(serviceStatusOutput{
+		Gateway: runnerprocess.Status{
+			Kind: runnerprocess.StatusRunning, Health: &health, Endpoint: "http://127.0.0.1:11435",
+		},
+		Model: runnerprocess.Status{
+			Kind: runnerprocess.StatusRunning, Preset: "gemma4-26b", Health: &health,
+			ResidentBytes: 16 * 1024 * 1024 * 1024, LogFile: "/tmp/model.log",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Gateway: running (healthy)", "127.0.0.1:11435/v1", "gemma4-26b", "16.0 GiB"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("human output missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestOutputArgumentsRemovesJSONFlag(t *testing.T) {
 	arguments, jsonOutput := outputArguments([]string{"status", "--json"})
 	if !jsonOutput || len(arguments) != 1 || arguments[0] != "status" {

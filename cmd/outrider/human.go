@@ -23,6 +23,13 @@ func humanOutput(value any) (string, error) {
 		return humanUp(output), nil
 	case runnerprocess.Status:
 		return humanStatus(output), nil
+	case serviceStatusOutput:
+		return humanServiceStatus(output), nil
+	case useOutput:
+		return fmt.Sprintf(
+			"Active model: %s\nVera endpoint: %s/v1\nMemory: %s\nLog: %s\n",
+			output.Profile, output.Endpoint, formatByteCount(output.Model.ResidentBytes), output.Model.LogFile,
+		), nil
 	case logOutput:
 		if len(output.Lines) == 0 {
 			return fmt.Sprintf("No log output yet.\nLog: %s\n", output.LogFile), nil
@@ -95,6 +102,11 @@ func humanStatus(status runnerprocess.Status) string {
 		health = map[bool]string{true: "healthy", false: "unhealthy"}[*status.Health]
 	}
 	var result strings.Builder
+	if status.Preset == "gateway" {
+		_, _ = fmt.Fprintf(&result, "Outrider gateway is %s.\n", status.Kind)
+		_, _ = fmt.Fprintf(&result, "Health: %s\nEndpoint: %s/v1\nPID: %d\nLog: %s\n", health, status.Endpoint, status.PID, status.LogFile)
+		return result.String()
+	}
 	_, _ = fmt.Fprintf(&result, "Outrider is %s.\n", status.Kind)
 	_, _ = fmt.Fprintf(&result, "Model: %s\nHealth: %s\n", status.Preset, health)
 	if status.ResidentBytes > 0 {
@@ -108,6 +120,33 @@ func humanStatus(status runnerprocess.Status) string {
 	)
 	if status.Detail != "" && status.Detail != "healthy" {
 		_, _ = fmt.Fprintf(&result, "Detail: %s\n", status.Detail)
+	}
+	return result.String()
+}
+
+func humanServiceStatus(status serviceStatusOutput) string {
+	var result strings.Builder
+	if status.Gateway.Kind == runnerprocess.StatusRunning {
+		health := "unknown"
+		if status.Gateway.Health != nil {
+			health = map[bool]string{true: "healthy", false: "unhealthy"}[*status.Gateway.Health]
+		}
+		_, _ = fmt.Fprintf(&result, "Gateway: %s (%s)\nEndpoint: %s/v1\n", status.Gateway.Kind, health, status.Gateway.Endpoint)
+	} else {
+		_, _ = fmt.Fprintf(&result, "Gateway: %s\n", status.Gateway.Kind)
+	}
+	if status.Model.Kind == runnerprocess.StatusRunning {
+		health := "unknown"
+		if status.Model.Health != nil {
+			health = map[bool]string{true: "healthy", false: "unhealthy"}[*status.Model.Health]
+		}
+		_, _ = fmt.Fprintf(&result, "Model: %s (%s)\n", status.Model.Preset, health)
+		if status.Model.ResidentBytes > 0 {
+			_, _ = fmt.Fprintf(&result, "Memory: %s\n", formatByteCount(status.Model.ResidentBytes))
+		}
+		_, _ = fmt.Fprintf(&result, "Model log: %s\n", status.Model.LogFile)
+	} else {
+		_, _ = fmt.Fprintf(&result, "Model: %s\n", status.Model.Kind)
 	}
 	return result.String()
 }

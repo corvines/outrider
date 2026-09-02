@@ -7,6 +7,7 @@ import (
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/manifest"
 	"github.com/corvines/outrider/internal/ollamacache"
+	runnerprocess "github.com/corvines/outrider/internal/process"
 )
 
 type releaseOutput struct {
@@ -63,6 +64,17 @@ type pullOutput struct {
 type logOutput struct {
 	LogFile string   `json:"logFile"`
 	Lines   []string `json:"lines"`
+}
+
+type serviceStatusOutput struct {
+	Gateway runnerprocess.Status `json:"gateway"`
+	Model   runnerprocess.Status `json:"model"`
+}
+
+type useOutput struct {
+	Profile  string               `json:"profile"`
+	Endpoint string               `json:"endpoint"`
+	Model    runnerprocess.Status `json:"model"`
 }
 
 type stateOutput struct {

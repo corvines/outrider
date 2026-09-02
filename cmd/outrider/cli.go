@@ -29,6 +29,9 @@ const usage = `outrider: loopback llama.cpp runner
   outrider models
   outrider show <profile>
   outrider pull <profile>
+  outrider start
+  outrider use <profile>
+  outrider status
   outrider serve [profile]
   outrider run <profile|cached-model>
   outrider chat [--endpoint URL]
@@ -38,7 +41,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider logs [--lines N]
   outrider stop
 
-Compatibility aliases: ls = models, up = serve, status = ps, down = stop.
+Compatibility aliases: ls = models, up = serve, down = stop.
 
 Add --json anywhere for machine-readable output.
 
@@ -168,6 +171,33 @@ func runWithOptions(
 			return "", err
 		}
 		return formatOutput(output, options.Human)
+	case "start":
+		if len(argv) != 1 {
+			return "", usageError("start does not accept arguments")
+		}
+		status, err := startGateway(ctx, environment)
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(status, options.Human)
+	case "use":
+		if len(argv) != 2 {
+			return "", usageError("use expects exactly one runnable profile id")
+		}
+		output, err := useGatewayModel(ctx, argv[1], environment, options)
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(output, options.Human)
+	case "status":
+		if len(argv) != 1 {
+			return "", usageError("status does not accept arguments")
+		}
+		status, err := getServiceStatus(ctx, environment)
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(status, options.Human)
 	case "chat":
 		endpoint, err := parseChatArguments(argv[1:])
 		if err != nil {
@@ -263,7 +293,7 @@ func runWithOptions(
 			return "", usageError("demo expects exactly one runnable profile id")
 		}
 		return runDemo(ctx, argv[1], environment, options)
-	case "ps", "stop":
+	case "ps":
 		if len(argv) != 1 {
 			return "", usageError(fmt.Sprintf("%s does not accept a profile id", command))
 		}
@@ -271,12 +301,16 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		var status runnerprocess.Status
-		if command == "ps" {
-			status, err = runnerprocess.GetActiveStatus(ctx, state)
-		} else {
-			status, err = runnerprocess.StopActive(ctx, state, runnerprocess.StopOptions{})
+		status, err := runnerprocess.GetActiveStatus(ctx, state)
+		if err != nil {
+			return "", err
 		}
+		return formatOutput(status, options.Human)
+	case "stop":
+		if len(argv) != 1 {
+			return "", usageError("stop does not accept arguments")
+		}
+		status, err := stopServices(ctx, environment)
 		if err != nil {
 			return "", err
 		}
@@ -476,8 +510,6 @@ func canonicalCommand(command string) string {
 		return "ls"
 	case "up":
 		return "serve"
-	case "status":
-		return "ps"
 	case "down":
 		return "stop"
 	default:

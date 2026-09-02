@@ -441,6 +441,19 @@ func (m *model) streamResponse() {
 		return
 	}
 	defer res.Body.Close()
+	if res.StatusCode >= http.StatusMultipleChoices {
+		body, readErr := io.ReadAll(io.LimitReader(res.Body, 64<<10))
+		if readErr != nil {
+			m.streamCh <- streamMsg{err: fmt.Errorf("model server returned HTTP %d: %w", res.StatusCode, readErr)}
+			return
+		}
+		detail := strings.TrimSpace(string(body))
+		if detail == "" {
+			detail = http.StatusText(res.StatusCode)
+		}
+		m.streamCh <- streamMsg{err: fmt.Errorf("model server returned HTTP %d: %s", res.StatusCode, detail)}
+		return
+	}
 	r := bufio.NewReader(res.Body)
 	seenTiming := false
 	for {

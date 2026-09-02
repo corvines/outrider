@@ -205,6 +205,32 @@ func TestPromptAppearsOnceInCompletionRequest(t *testing.T) {
 	tm.WaitFinished(t)
 }
 
+func TestCompletionHTTPErrorIncludesServerDetail(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(`{"error":{"message":"context is too large"}}`))
+	}))
+	defer srv.Close()
+
+	m := New(RunOptions{Endpoint: srv.URL})
+	m.currentModel = "tiny"
+	m.messages = []message{
+		{role: "user", content: "hello"},
+		{role: "assistant"},
+	}
+	go m.streamResponse()
+
+	select {
+	case response := <-m.streamCh:
+		if response.err == nil || !strings.Contains(response.err.Error(), "HTTP 400") ||
+			!strings.Contains(response.err.Error(), "context is too large") {
+			t.Fatalf("completion error = %v", response.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("completion error was not received")
+	}
+}
+
 func TestUnreachableEndpoint(t *testing.T) {
 	err := Run("http://127.0.0.1:1")
 	if err == nil {

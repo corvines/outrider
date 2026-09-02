@@ -54,6 +54,12 @@ type requestMessage struct {
 	Content string `json:"content"`
 }
 
+type completionRequest struct {
+	Model    string           `json:"model"`
+	Messages []requestMessage `json:"messages"`
+	Stream   bool             `json:"stream"`
+}
+
 type timingsResp struct {
 	PromptN            *int     `json:"prompt_n"`
 	PredictedN         *int     `json:"predicted_n"`
@@ -396,34 +402,31 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 	m.rebuildTranscripts()
 	m.followBottom()
 
-	go m.streamResponse(text)
+	go m.streamResponse()
 	return func() tea.Msg {
 		m2 := m
 		return <-m2.streamCh
 	}
 }
 
-func (m *model) streamResponse(prompt string) {
+func (m *model) streamResponse() {
 	if m.currentModel == "" && len(m.rows) > 0 {
 		m.adoptRow(m.rows[0])
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	m.promptCancel = cancel
-	payload := struct {
-		Model    string           `json:"model"`
-		Messages []requestMessage `json:"messages"`
-		Stream   bool             `json:"stream"`
-	}{}
+	payload := completionRequest{}
 	payload.Model = m.currentModel
 	payload.Stream = true
-	for _, msg := range m.messages {
+	for index, msg := range m.messages {
+		if index == len(m.messages)-1 && msg.role == "assistant" && msg.content == "" {
+			continue
+		}
 		if msg.role == "user" || msg.role == "assistant" {
 			payload.Messages = append(payload.Messages, requestMessage{Role: msg.role, Content: msg.content})
 		}
 	}
-	payload.Messages = append(payload.Messages, requestMessage{Role: "user", Content: prompt})
-
 	buf, _ := json.Marshal(payload)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, m.endpoint+"/v1/chat/completions", bytes.NewBuffer(buf))
 	if err != nil {

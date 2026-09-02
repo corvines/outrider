@@ -166,6 +166,45 @@ func TestStatsFallbackWhenTimingsMissing(t *testing.T) {
 	}
 }
 
+func TestPromptAppearsOnceInCompletionRequest(t *testing.T) {
+	requests := make(chan completionRequest, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_, _ = w.Write([]byte(`{"data":[{"id":"tiny","context_window":4096}]}`))
+			return
+		case "/v1/chat/completions":
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		var request completionRequest
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		requests <- request
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	tm := runApp(t, srv)
+	sendText(tm, "hello")
+	tm.Send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	select {
+	case request := <-requests:
+		if len(request.Messages) != 1 || request.Messages[0].Content != "hello" {
+			t.Fatalf("expected one user message, got %#v", request.Messages)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("completion request was not received")
+	}
+
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
+	tm.Send(tea.KeyMsg{Type: tea.KeyCtrlC})
+	tm.WaitFinished(t)
+}
+
 func TestUnreachableEndpoint(t *testing.T) {
 	err := Run("http://127.0.0.1:1")
 	if err == nil {

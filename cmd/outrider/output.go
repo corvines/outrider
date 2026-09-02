@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+
 	"github.com/corvines/outrider/internal/admission"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/manifest"
@@ -20,6 +22,31 @@ type modelOutput struct {
 	File       string `json:"file"`
 	Quant      string `json:"quant"`
 	LocalPath  string `json:"localPath,omitempty"`
+}
+
+type profileCacheOutput struct {
+	State     string `json:"state"`
+	Path      string `json:"path"`
+	SizeBytes int64  `json:"sizeBytes,omitempty"`
+}
+
+type profileSummaryOutput struct {
+	ID          string             `json:"id"`
+	Runnable    bool               `json:"runnable"`
+	Description string             `json:"description"`
+	Model       modelOutput        `json:"model"`
+	Context     int                `json:"context"`
+	MTP         bool               `json:"mtp"`
+	Cache       profileCacheOutput `json:"cache"`
+}
+
+type profileListOutput struct {
+	Profiles []profileSummaryOutput `json:"profiles"`
+}
+
+type profileDetailOutput struct {
+	Profile manifest.Profile   `json:"profile"`
+	Cache   profileCacheOutput `json:"cache"`
 }
 
 type stateOutput struct {
@@ -95,6 +122,36 @@ func newModelOutput(model manifest.Artifact) modelOutput {
 	return modelOutput{
 		Repository: model.Repo, File: model.File, Quant: model.Quant, LocalPath: model.LocalPath,
 	}
+}
+
+func newProfileSummary(profile manifest.Profile, state manifest.StatePaths) (profileSummaryOutput, error) {
+	cache, err := inspectProfileCache(profile, state.Model)
+	if err != nil {
+		return profileSummaryOutput{}, err
+	}
+	return profileSummaryOutput{
+		ID: profile.ID, Runnable: profile.Runnable, Description: profile.Description,
+		Model: newModelOutput(profile.Model), Context: profile.Context.Size,
+		MTP: profile.Speculation.Mode == "mtp", Cache: cache,
+	}, nil
+}
+
+func inspectProfileCache(profile manifest.Profile, path string) (profileCacheOutput, error) {
+	cache := profileCacheOutput{State: "missing", Path: path}
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return cache, nil
+	}
+	if err != nil {
+		return profileCacheOutput{}, err
+	}
+	cache.SizeBytes = info.Size()
+	if !info.Mode().IsRegular() || (profile.Model.SizeBytes > 0 && info.Size() != profile.Model.SizeBytes) {
+		cache.State = "invalid"
+		return cache, nil
+	}
+	cache.State = "present"
+	return cache, nil
 }
 
 func newUpOutput(session runSession) upOutput {

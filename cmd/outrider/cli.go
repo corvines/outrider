@@ -22,7 +22,10 @@ const usage = `outrider: loopback llama.cpp runner
   outrider plan <profile>
   outrider check <profile>
   outrider verify <profile>
+  outrider ls
+  outrider show <profile>
   outrider serve <profile>
+  outrider run <profile>
   outrider chat [--endpoint URL]
   outrider smoke
   outrider demo <profile>
@@ -99,6 +102,44 @@ func runWithOptions(
 	}
 	command = canonicalCommand(command)
 	switch command {
+	case "ls":
+		if len(argv) != 1 {
+			return "", usageError("ls does not accept arguments")
+		}
+		profiles, err := manifest.All()
+		if err != nil {
+			return "", err
+		}
+		output := profileListOutput{Profiles: make([]profileSummaryOutput, 0, len(profiles))}
+		for _, profile := range profiles {
+			state, err := manifest.Paths(environment["OUTRIDER_HOME"], profile, "")
+			if err != nil {
+				return "", err
+			}
+			summary, err := newProfileSummary(profile, state)
+			if err != nil {
+				return "", err
+			}
+			output.Profiles = append(output.Profiles, summary)
+		}
+		return encodeOutput(output)
+	case "show":
+		if len(argv) != 2 {
+			return "", usageError("show expects exactly one profile id")
+		}
+		profile, err := manifest.Get(argv[1])
+		if err != nil {
+			return "", err
+		}
+		state, err := manifest.Paths(environment["OUTRIDER_HOME"], profile, "")
+		if err != nil {
+			return "", err
+		}
+		cache, err := inspectProfileCache(profile, state.Model)
+		if err != nil {
+			return "", err
+		}
+		return encodeOutput(profileDetailOutput{Profile: profile, Cache: cache})
 	case "chat":
 		endpoint, err := parseChatArguments(argv[1:])
 		if err != nil {
@@ -173,6 +214,11 @@ func runWithOptions(
 			return "", err
 		}
 		return encodeOutput(newUpOutput(session))
+	case "run":
+		if len(argv) != 2 {
+			return "", usageError("run expects exactly one runnable profile id")
+		}
+		return runInteractive(ctx, argv[1], environment, options)
 	case "smoke":
 		if len(argv) != 1 {
 			return "", usageError("smoke does not accept a preset id")
@@ -204,6 +250,30 @@ func runWithOptions(
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
 	}
+}
+
+func runInteractive(
+	ctx context.Context,
+	profileID string,
+	environment map[string]string,
+	options runOptions,
+) (string, error) {
+	session, operationErr := startSession(ctx, profileID, environment, options)
+	if operationErr == nil {
+		runChat := options.Chat
+		if runChat == nil {
+			runChat = chat.Run
+		}
+		operationErr = runChat(session.Preparation.Plan.Endpoint)
+	}
+	cleanupErr := cleanupSession(session)
+	if operationErr != nil && cleanupErr != nil {
+		return "", runnerErrorf("%v; cleanup also failed: %v", operationErr, cleanupErr)
+	}
+	if operationErr != nil {
+		return "", operationErr
+	}
+	return "", cleanupErr
 }
 
 func parseChatArguments(arguments []string) (string, error) {
@@ -368,17 +438,7 @@ func runDemo(
 		}
 	}
 
-	var cleanupErr error
-	if shouldCleanup(session) {
-		cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		status, err := runnerprocess.Stop(cleanupContext, session.Preparation.Plan, runnerprocess.StopOptions{})
-		if err != nil {
-			cleanupErr = err
-		} else if status.Kind != runnerprocess.StatusStopped {
-			cleanupErr = runnerErrorf("demo cleanup did not stop the runner: %s", status.Detail)
-		}
-	}
+	cleanupErr := cleanupSession(session)
 	if operationErr != nil && cleanupErr != nil {
 		return "", runnerErrorf("%v; cleanup also failed: %v", operationErr, cleanupErr)
 	}
@@ -389,6 +449,22 @@ func runDemo(
 		return "", cleanupErr
 	}
 	return output, nil
+}
+
+func cleanupSession(session runSession) error {
+	if !shouldCleanup(session) {
+		return nil
+	}
+	cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	status, err := runnerprocess.Stop(cleanupContext, session.Preparation.Plan, runnerprocess.StopOptions{})
+	if err != nil {
+		return err
+	}
+	if status.Kind != runnerprocess.StatusStopped {
+		return runnerErrorf("cleanup did not stop the runner: %s", status.Detail)
+	}
+	return nil
 }
 
 func shouldCleanup(session runSession) bool {

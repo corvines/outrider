@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -150,12 +151,64 @@ func TestChatCommand(t *testing.T) {
 	}
 }
 
+func TestListAndShowProfiles(t *testing.T) {
+	root := t.TempDir()
+	listJSON, err := run(context.Background(), []string{"ls"}, map[string]string{"OUTRIDER_HOME": root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list profileListOutput
+	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Profiles) != 3 {
+		t.Fatalf("profiles = %#v", list.Profiles)
+	}
+	if list.Profiles[0].Cache.State != "missing" {
+		t.Fatalf("first cache = %#v", list.Profiles[0].Cache)
+	}
+
+	showJSON, err := run(context.Background(), []string{"show", "qwen35b-mtp"}, map[string]string{"OUTRIDER_HOME": root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var detail profileDetailOutput
+	if err := json.Unmarshal([]byte(showJSON), &detail); err != nil {
+		t.Fatal(err)
+	}
+	if detail.Profile.ID != "qwen35b-mtp" || detail.Profile.Runnable || detail.Profile.Speculation.Mode != "mtp" {
+		t.Fatalf("profile detail = %#v", detail)
+	}
+}
+
+func TestProfileCacheInspection(t *testing.T) {
+	profile, err := manifest.Get("tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.Model.SizeBytes = 4
+	path := filepath.Join(t.TempDir(), "tiny.gguf")
+	if err := os.WriteFile(path, make([]byte, profile.Model.SizeBytes), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := inspectProfileCache(profile, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cache.State != "present" || cache.SizeBytes != profile.Model.SizeBytes {
+		t.Fatalf("cache = %#v", cache)
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	for _, argv := range [][]string{
 		nil,
 		{"plan"},
 		{"check"},
 		{"verify"},
+		{"ls", "extra"},
+		{"show"},
+		{"run"},
 		{"chat", "unexpected"},
 		{"chat", "--missing"},
 		{"serve", "qwen35b-mtp"},

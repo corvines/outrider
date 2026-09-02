@@ -141,7 +141,14 @@ func buildPackage(options buildOptions) (buildResult, error) {
 	} else if !os.IsNotExist(err) {
 		return buildResult{}, err
 	}
-	for _, tool := range []string{"codesign", "pkgbuild", "productbuild", "hdiutil"} {
+	tools := []string{"codesign", "pkgbuild", "productbuild", "hdiutil"}
+	if options.InstallerIdentity != "" {
+		tools = append(tools, "pkgutil")
+	}
+	if options.NotaryProfile != "" {
+		tools = append(tools, "xcrun")
+	}
+	for _, tool := range tools {
 		if _, err := exec.LookPath(tool); err != nil {
 			return buildResult{}, fmt.Errorf("required packaging tool %s is unavailable", tool)
 		}
@@ -159,14 +166,10 @@ func buildPackage(options buildOptions) (buildResult, error) {
 	if identity == "" {
 		identity = "-"
 	}
-	codesignArguments := []string{"--force", "--sign", identity}
-	if identity == "-" {
-		codesignArguments = append(codesignArguments, "--timestamp=none")
-	} else {
-		codesignArguments = append(codesignArguments, "--options", "runtime", "--timestamp")
+	if err := command("codesign", binarySignArguments(identity, prepared)...); err != nil {
+		return buildResult{}, err
 	}
-	codesignArguments = append(codesignArguments, prepared)
-	if err := command("codesign", codesignArguments...); err != nil {
+	if err := command("codesign", "--verify", "--strict", prepared); err != nil {
 		return buildResult{}, err
 	}
 	payload := filepath.Join(workspace, "payload")
@@ -194,6 +197,11 @@ func buildPackage(options buildOptions) (buildResult, error) {
 	if err := command("productbuild", productArguments...); err != nil {
 		return buildResult{}, err
 	}
+	if options.InstallerIdentity != "" {
+		if err := command("pkgutil", "--check-signature", productPackage); err != nil {
+			return buildResult{}, err
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
 		return buildResult{}, err
 	}
@@ -203,7 +211,7 @@ func buildPackage(options buildOptions) (buildResult, error) {
 	); err != nil {
 		return buildResult{}, err
 	}
-	if err := command("codesign", "--force", "--sign", identity, output); err != nil {
+	if err := command("codesign", diskImageSignArguments(identity, output)...); err != nil {
 		return buildResult{}, err
 	}
 	if err := command("codesign", "--verify", "--strict", output); err != nil {
@@ -223,6 +231,9 @@ func buildPackage(options buildOptions) (buildResult, error) {
 		if err := command("xcrun", "stapler", "staple", output); err != nil {
 			return buildResult{}, err
 		}
+		if err := command("xcrun", "stapler", "validate", output); err != nil {
+			return buildResult{}, err
+		}
 		notarized = true
 	}
 	return buildResult{
@@ -230,6 +241,26 @@ func buildPackage(options buildOptions) (buildResult, error) {
 		Signed:    options.ApplicationIdentity != "" && options.InstallerIdentity != "",
 		Notarized: notarized, MarkerHash: marker.SHA256,
 	}, nil
+}
+
+func binarySignArguments(identity string, target string) []string {
+	arguments := []string{"--force", "--sign", identity}
+	if identity == "-" {
+		arguments = append(arguments, "--timestamp=none")
+	} else {
+		arguments = append(arguments, "--options", "runtime", "--timestamp")
+	}
+	return append(arguments, target)
+}
+
+func diskImageSignArguments(identity string, target string) []string {
+	arguments := []string{"--force", "--sign", identity}
+	if identity == "-" {
+		arguments = append(arguments, "--timestamp=none")
+	} else {
+		arguments = append(arguments, "--timestamp")
+	}
+	return append(arguments, target)
 }
 
 func copyBinary(source string, destination string) error {

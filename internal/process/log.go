@@ -1,9 +1,63 @@
 package process
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"sync"
+
+	"github.com/corvines/outrider/internal/manifest"
 )
+
+func startupExitError(waitErr error, plan manifest.Plan) error {
+	detail := lastUsefulLogLine(plan.State.Log)
+	cause := explainLoadingFailure(detail)
+	status := "without an exit status"
+	if waitErr != nil {
+		status = waitErr.Error()
+	}
+	return runnerErrorf(
+		"llama-server exited before becoming healthy: %s\n%s\nLikely cause: %s\nLog: %s",
+		status, detail, cause, plan.State.Log,
+	)
+}
+
+func lastUsefulLogLine(path string) string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "No server output was available."
+	}
+	lines := strings.Split(string(content), "\n")
+	for _, marker := range []string{"error loading model:", "error:", "failed", "unknown", "unsupported"} {
+		for index := len(lines) - 1; index >= 0; index-- {
+			line := strings.TrimSpace(lines[index])
+			if line != "" && strings.Contains(strings.ToLower(line), marker) &&
+				!strings.Contains(strings.ToLower(line), "exiting due to model loading error") {
+				return line
+			}
+		}
+	}
+	for index := len(lines) - 1; index >= 0; index-- {
+		if line := strings.TrimSpace(lines[index]); line != "" {
+			return line
+		}
+	}
+	return "No server output was available."
+}
+
+func explainLoadingFailure(detail string) string {
+	lower := strings.ToLower(detail)
+	switch {
+	case strings.Contains(lower, "rope.dimension_sections has wrong array length"):
+		return "this GGUF uses a Qwen3.5 metadata layout that the pinned runtime cannot read. Use a tested profile or another development model."
+	case strings.Contains(lower, "wrong number of tensors"):
+		return "this model likely uses a conversion layout or companion assets that the pinned runtime cannot load directly. Try another development model."
+	case strings.Contains(lower, "unsupported model architecture"):
+		return "the pinned runtime does not support this model architecture. Try another development model."
+	default:
+		return fmt.Sprintf("the model is incompatible with the pinned runtime or its launch settings. The loader reported %q.", detail)
+	}
+}
 
 const serverLogMaxBytes int64 = 8 * 1024 * 1024
 

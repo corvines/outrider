@@ -151,6 +151,24 @@ func TestStartCleansUpWhenHealthFails(t *testing.T) {
 	}
 }
 
+func TestStartReportsEarlyModelLoadFailure(t *testing.T) {
+	plan := fakeServerPlanWithArgs(t, "--fake-load-failure")
+	startedAt := time.Now()
+	_, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 5 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err == nil || !strings.Contains(err.Error(), "Likely cause:") ||
+		!strings.Contains(err.Error(), "Qwen3.5 metadata layout") {
+		t.Fatalf("start error = %v", err)
+	}
+	if time.Since(startedAt) >= 2*time.Second {
+		t.Fatalf("early failure took %s", time.Since(startedAt))
+	}
+	if _, statErr := os.Stat(plan.State.PID); !os.IsNotExist(statErr) {
+		t.Fatalf("active record remains: %v", statErr)
+	}
+}
+
 func TestStartRefusesOwnedProcessWithDifferentPlan(t *testing.T) {
 	plan := fakeServerPlan(t, false)
 	t.Cleanup(func() { _, _ = Stop(context.Background(), plan, StopOptions{}) })
@@ -384,12 +402,15 @@ func TestProcessHelper(t *testing.T) {
 	port := ""
 	noHealth := false
 	exitAfterHealth := false
+	loadFailure := false
 	for i := separator; i < len(args); i++ {
 		switch args[i] {
 		case "--fake-no-health":
 			noHealth = true
 		case "--fake-exit-after-health":
 			exitAfterHealth = true
+		case "--fake-load-failure":
+			loadFailure = true
 		case "--port":
 			i++
 			if i < len(args) {
@@ -399,6 +420,13 @@ func TestProcessHelper(t *testing.T) {
 	}
 	if port == "" {
 		os.Exit(2)
+	}
+	if loadFailure {
+		_, _ = fmt.Fprintln(
+			os.Stderr,
+			"error loading model: key qwen35.rope.dimension_sections has wrong array length; expected 4, got 3",
+		)
+		os.Exit(1)
 	}
 	handler := http.NewServeMux()
 	var exitOnce sync.Once

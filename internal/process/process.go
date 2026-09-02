@@ -132,12 +132,19 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		return Status{}, runnerError("could not launch llama-server", err)
 	}
 	pid := command.Process.Pid
+	commandDone := make(chan error, 1)
 	go func() {
-		_ = command.Wait()
+		waitErr := command.Wait()
 		_ = logFile.Close()
+		commandDone <- waitErr
 	}()
 	observed := waitForProcessObservation(ctx, pid)
 	if observed == nil {
+		select {
+		case waitErr := <-commandDone:
+			return Status{}, startupExitError(waitErr, plan)
+		default:
+		}
 		_ = command.Process.Kill()
 		return Status{}, runnerErrorf(
 			"launched llama-server PID %d but could not verify its process identity; see %s",
@@ -166,7 +173,24 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		return Status{}, err
 	}
 
-	if _, err := endpoint.WaitForHealth(ctx, plan.HealthEndpoint, healthOptions(options)); err != nil {
+	healthContext, cancelHealth := context.WithCancel(ctx)
+	healthDone := make(chan error, 1)
+	go func() {
+		_, err := endpoint.WaitForHealth(healthContext, plan.HealthEndpoint, healthOptions(options))
+		healthDone <- err
+	}()
+	select {
+	case waitErr := <-commandDone:
+		cancelHealth()
+		if err := os.Remove(plan.State.PID); err != nil && !os.IsNotExist(err) {
+			return Status{}, runnerError("llama-server exited and its active record could not be removed", err)
+		}
+		return Status{}, startupExitError(waitErr, plan)
+	case err := <-healthDone:
+		cancelHealth()
+		if err == nil {
+			break
+		}
 		failure := healthFailure(err, plan)
 		if _, cleanupErr := stop(plan, StopOptions{}); cleanupErr != nil {
 			return Status{}, runnerErrorf("%s; cleanup also failed: %v", failure, cleanupErr)

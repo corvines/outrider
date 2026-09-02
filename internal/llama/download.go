@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,12 @@ import (
 
 	"github.com/corvines/outrider/internal/manifest"
 )
+
+type resumeMetadata struct {
+	URL          string `json:"url"`
+	ETag         string `json:"etag,omitempty"`
+	LastModified string `json:"lastModified,omitempty"`
+}
 
 func ModelDownloadURL(profile manifest.Profile) (string, error) {
 	if profile.Model.Repo == "" || profile.Model.File == "" {
@@ -30,60 +37,191 @@ func ModelDownloadURL(profile manifest.Profile) (string, error) {
 func DownloadFile(ctx context.Context, sourceURL string, destination string) error {
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
-		if err != nil {
-			return err
+		lastErr = downloadAttempt(ctx, http.DefaultClient, sourceURL, destination)
+		if lastErr == nil {
+			return nil
 		}
-		response, err := http.DefaultClient.Do(request)
-		if err != nil {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			lastErr = err
-			continue
-		}
-		if response.StatusCode >= 200 && response.StatusCode < 300 {
-			err := writeDownload(response.Body, destination)
-			response.Body.Close()
-			return err
-		}
-		lastErr = fmt.Errorf("GET %s returned %s", sourceURL, response.Status)
-		_, _ = io.Copy(io.Discard, response.Body)
-		response.Body.Close()
-		if response.StatusCode != http.StatusRequestTimeout && response.StatusCode != http.StatusTooManyRequests && response.StatusCode < 500 {
-			return lastErr
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 	}
 	return lastErr
 }
 
-func writeDownload(source io.Reader, destination string) error {
-	file, err := os.OpenFile(destination, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+func downloadAttempt(ctx context.Context, client *http.Client, sourceURL string, destination string) error {
+	offset, metadata := resumableOffset(destination, sourceURL)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		return err
 	}
-	closed := false
-	succeeded := false
-	defer func() {
-		if !closed {
-			file.Close()
+	if offset > 0 {
+		request.Header.Set("Range", fmt.Sprintf("bytes=%d-", offset))
+		if metadata.ETag != "" {
+			request.Header.Set("If-Range", metadata.ETag)
+		} else {
+			request.Header.Set("If-Range", metadata.LastModified)
 		}
-		if !succeeded {
-			os.Remove(destination)
-		}
-	}()
-	if _, err := io.Copy(file, source); err != nil {
+	}
+	response, err := client.Do(request)
+	if err != nil {
 		return err
 	}
+	defer response.Body.Close()
+
+	appendResponse := false
+	total := response.ContentLength
+	switch response.StatusCode {
+	case http.StatusOK:
+		offset = 0
+	case http.StatusPartialContent:
+		start, contentTotal, parseErr := parseContentRange(response.Header.Get("Content-Range"))
+		if parseErr != nil || offset == 0 || start != offset {
+			return fmt.Errorf("GET %s returned an invalid resume response: %s", sourceURL, response.Status)
+		}
+		appendResponse = true
+		total = contentTotal
+	case http.StatusRequestedRangeNotSatisfiable:
+		contentTotal, parseErr := parseUnsatisfiedRange(response.Header.Get("Content-Range"))
+		if parseErr == nil && offset == contentTotal {
+			_ = os.Remove(resumeMetadataPath(destination))
+			return nil
+		}
+		return fmt.Errorf("GET %s returned %s for a %d-byte partial", sourceURL, response.Status, offset)
+	default:
+		_, _ = io.Copy(io.Discard, response.Body)
+		return fmt.Errorf("GET %s returned %s", sourceURL, response.Status)
+	}
+
+	metadata = responseMetadata(sourceURL, response, metadata)
+	if metadata.ETag != "" || metadata.LastModified != "" {
+		if err := writeResumeMetadata(destination, metadata); err != nil {
+			return err
+		}
+	}
+	flags := os.O_CREATE | os.O_WRONLY
+	if appendResponse {
+		flags |= os.O_APPEND
+	} else {
+		flags |= os.O_TRUNC
+	}
+	file, err := os.OpenFile(destination, flags, 0o600)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(file, response.Body)
 	if err := file.Sync(); err != nil {
+		file.Close()
 		return err
 	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	closed = true
-	succeeded = true
+	if copyErr != nil {
+		return copyErr
+	}
+	if total >= 0 {
+		info, err := os.Stat(destination)
+		if err != nil {
+			return err
+		}
+		if info.Size() != total {
+			return fmt.Errorf("GET %s ended at %d bytes; expected %d", sourceURL, info.Size(), total)
+		}
+	}
+	if err := os.Remove(resumeMetadataPath(destination)); err != nil && !os.IsNotExist(err) {
+		return err
+	}
 	return nil
+}
+
+func resumableOffset(destination string, sourceURL string) (int64, resumeMetadata) {
+	info, err := os.Stat(destination)
+	if err != nil || !info.Mode().IsRegular() || info.Size() == 0 {
+		return 0, resumeMetadata{}
+	}
+	metadata, err := readResumeMetadata(destination)
+	if err != nil || metadata.URL != sourceURL || metadata.ETag == "" && metadata.LastModified == "" {
+		_ = os.Remove(destination)
+		_ = os.Remove(resumeMetadataPath(destination))
+		return 0, resumeMetadata{}
+	}
+	return info.Size(), metadata
+}
+
+func responseMetadata(sourceURL string, response *http.Response, previous resumeMetadata) resumeMetadata {
+	metadata := resumeMetadata{
+		URL: sourceURL, ETag: response.Header.Get("ETag"), LastModified: response.Header.Get("Last-Modified"),
+	}
+	if metadata.ETag == "" && metadata.LastModified == "" {
+		metadata.ETag = previous.ETag
+		metadata.LastModified = previous.LastModified
+	}
+	return metadata
+}
+
+func readResumeMetadata(destination string) (resumeMetadata, error) {
+	data, err := os.ReadFile(resumeMetadataPath(destination))
+	if err != nil {
+		return resumeMetadata{}, err
+	}
+	var metadata resumeMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		return resumeMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func writeResumeMetadata(destination string, metadata resumeMetadata) error {
+	data, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	path := resumeMetadataPath(destination)
+	file, err := os.CreateTemp(filepath.Dir(path), ".resume-")
+	if err != nil {
+		return err
+	}
+	temporary := file.Name()
+	defer os.Remove(temporary)
+	if err := file.Chmod(0o600); err != nil {
+		file.Close()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary, path)
+}
+
+func resumeMetadataPath(destination string) string {
+	return destination + ".resume.json"
+}
+
+func parseContentRange(value string) (int64, int64, error) {
+	var start, end, total int64
+	if _, err := fmt.Sscanf(value, "bytes %d-%d/%d", &start, &end, &total); err != nil {
+		return 0, 0, err
+	}
+	if start < 0 || end < start || total <= end {
+		return 0, 0, fmt.Errorf("invalid Content-Range %q", value)
+	}
+	return start, total, nil
+}
+
+func parseUnsatisfiedRange(value string) (int64, error) {
+	var total int64
+	if _, err := fmt.Sscanf(value, "bytes */%d", &total); err != nil {
+		return 0, err
+	}
+	if total < 0 {
+		return 0, fmt.Errorf("invalid Content-Range %q", value)
+	}
+	return total, nil
 }
 
 func ensureArchive(ctx context.Context, archive string, release manifest.Release, download Downloader) error {
@@ -97,11 +235,7 @@ func ensureArchive(ctx context.Context, archive string, release manifest.Release
 		}
 		return nil
 	}
-	partial := fmt.Sprintf("%s.part-%d", archive, os.Getpid())
-	if err := os.Remove(partial); err != nil && !os.IsNotExist(err) {
-		return runnerError("could not clear partial runtime download", err)
-	}
-	defer os.Remove(partial)
+	partial := archive + ".part"
 	if download == nil {
 		download = DownloadFile
 	}
@@ -109,6 +243,8 @@ func ensureArchive(ctx context.Context, archive string, release manifest.Release
 		return runnerError("could not download pinned llama.cpp", err)
 	}
 	if err := verifySHA256(partial, release.SHA256, "llama.cpp archive"); err != nil {
+		_ = os.Remove(partial)
+		_ = os.Remove(resumeMetadataPath(partial))
 		return err
 	}
 	if err := os.Rename(partial, archive); err != nil {

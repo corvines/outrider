@@ -146,11 +146,7 @@ func EnsureModelCached(
 	if err := os.MkdirAll(filepath.Dir(modelPath), 0o700); err != nil {
 		return "", runnerError("could not create model cache", err)
 	}
-	partial := fmt.Sprintf("%s.part-%d", modelPath, os.Getpid())
-	if err := os.Remove(partial); err != nil && !os.IsNotExist(err) {
-		return "", runnerError("could not clear partial model download", err)
-	}
-	defer os.Remove(partial)
+	partial := modelPath + ".part"
 
 	download := options.Download
 	if download == nil {
@@ -168,9 +164,13 @@ func EnsureModelCached(
 		return "", err
 	}
 	if !valid {
+		_ = os.Remove(partial)
+		_ = os.Remove(resumeMetadataPath(partial))
 		return "", runnerErrorf("downloaded model is not a valid GGUF file: %s", partial)
 	}
 	if err := verifySHA256(partial, profile.Model.SHA256, "downloaded model"); err != nil {
+		_ = os.Remove(partial)
+		_ = os.Remove(resumeMetadataPath(partial))
 		return "", err
 	}
 	if err := os.Rename(partial, modelPath); err != nil {

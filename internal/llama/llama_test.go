@@ -2,18 +2,22 @@ package llama
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/corvines/outrider/internal/manifest"
 )
@@ -119,12 +123,8 @@ func TestEnsureModelRejectsMismatchedDownloadAndCleansPartial(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "downloaded model checksum mismatch") {
 		t.Fatalf("error = %v", err)
 	}
-	partials, err := filepath.Glob(plan.State.Model + ".part-*")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(partials) != 0 {
-		t.Fatalf("partial downloads remain: %v", partials)
+	if _, statErr := os.Stat(plan.State.Model + ".part"); !os.IsNotExist(statErr) {
+		t.Fatalf("corrupt partial remains: %v", statErr)
 	}
 }
 
@@ -261,6 +261,71 @@ func TestDownloadRetriesTransientResponses(t *testing.T) {
 	}
 	if string(contents) != "complete" {
 		t.Fatalf("download = %q", contents)
+	}
+}
+
+func TestDownloadPreservesAndResumesInterruptedPartial(t *testing.T) {
+	payload := bytes.Repeat([]byte("outrider-resume-"), 32768)
+	var cancel context.CancelFunc
+	requests := 0
+	resumedRange := ""
+	resumedValidator := ""
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests++
+		response.Header().Set("ETag", `"artifact-v1"`)
+		if request.Header.Get("Range") == "" {
+			response.Header().Set("Content-Length", strconv.Itoa(len(payload)))
+			_, _ = response.Write(payload[:len(payload)/2])
+			if flusher, ok := response.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			time.Sleep(25 * time.Millisecond)
+			cancel()
+			return
+		}
+		resumedRange = request.Header.Get("Range")
+		resumedValidator = request.Header.Get("If-Range")
+		startText := strings.TrimSuffix(strings.TrimPrefix(resumedRange, "bytes="), "-")
+		start, err := strconv.Atoi(startText)
+		if err != nil || start <= 0 || start >= len(payload) {
+			http.Error(response, "invalid range", http.StatusBadRequest)
+			return
+		}
+		response.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, len(payload)-1, len(payload)))
+		response.Header().Set("Content-Length", strconv.Itoa(len(payload)-start))
+		response.WriteHeader(http.StatusPartialContent)
+		_, _ = response.Write(payload[start:])
+	}))
+	defer server.Close()
+
+	destination := filepath.Join(t.TempDir(), "artifact.part")
+	ctx, stop := context.WithCancel(context.Background())
+	cancel = stop
+	if err := DownloadFile(ctx, server.URL, destination); !errors.Is(err, context.Canceled) {
+		t.Fatalf("interrupted download error = %v", err)
+	}
+	partial, err := os.Stat(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partial.Size() <= 0 || partial.Size() >= int64(len(payload)) {
+		t.Fatalf("partial size = %d", partial.Size())
+	}
+	if err := DownloadFile(context.Background(), server.URL, destination); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("resumed payload length = %d", len(got))
+	}
+	if requests != 2 || resumedRange == "" || resumedValidator != `"artifact-v1"` {
+		t.Fatalf("requests = %d, range = %q, validator = %q", requests, resumedRange, resumedValidator)
+	}
+	if _, err := os.Stat(resumeMetadataPath(destination)); !os.IsNotExist(err) {
+		t.Fatalf("resume metadata remains: %v", err)
 	}
 }
 

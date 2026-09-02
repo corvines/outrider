@@ -131,12 +131,33 @@ func TestLifecycleCommandAliases(t *testing.T) {
 	}
 }
 
+func TestChatCommand(t *testing.T) {
+	calledWith := ""
+	output, err := runWithOptions(
+		context.Background(),
+		[]string{"chat", "--endpoint", "http://127.0.0.1:11436"},
+		map[string]string{},
+		runOptions{Chat: func(endpoint string) error {
+			calledWith = endpoint
+			return nil
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if output != "" || calledWith != "http://127.0.0.1:11436" {
+		t.Fatalf("output = %q, endpoint = %q", output, calledWith)
+	}
+}
+
 func TestUsageErrors(t *testing.T) {
 	for _, argv := range [][]string{
 		nil,
 		{"plan"},
 		{"check"},
 		{"verify"},
+		{"chat", "unexpected"},
+		{"chat", "--missing"},
 		{"serve", "qwen35b-mtp"},
 		{"smoke", "tiny"},
 		{"demo"},

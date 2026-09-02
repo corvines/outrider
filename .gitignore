@@ -17,5 +17,8 @@ CLAUDE.md
 .env
 .env.*
 
+# Worktrees
+.worktrees/
+
 # macOS
 .DS_Store

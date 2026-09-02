@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"strconv"
 	"time"
 
 	"github.com/corvines/outrider/internal/admission"
+	"github.com/corvines/outrider/internal/chat"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
@@ -20,6 +23,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider check <profile>
   outrider verify <profile>
   outrider serve <profile>
+  outrider chat [--endpoint URL]
   outrider smoke
   outrider demo <profile>
   outrider ps
@@ -53,6 +57,7 @@ type runSession struct {
 
 type runOptions struct {
 	Progress llama.ProgressFunc
+	Chat     func(string) error
 }
 
 type downloadTracker struct {
@@ -94,6 +99,19 @@ func runWithOptions(
 	}
 	command = canonicalCommand(command)
 	switch command {
+	case "chat":
+		endpoint, err := parseChatArguments(argv[1:])
+		if err != nil {
+			return "", err
+		}
+		runChat := options.Chat
+		if runChat == nil {
+			runChat = chat.Run
+		}
+		if err := runChat(endpoint); err != nil {
+			return "", err
+		}
+		return "", nil
 	case "plan":
 		if len(argv) != 2 {
 			return "", usageError("plan expects exactly one preset id")
@@ -186,6 +204,19 @@ func runWithOptions(
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
 	}
+}
+
+func parseChatArguments(arguments []string) (string, error) {
+	flags := flag.NewFlagSet("chat", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	endpoint := flags.String("endpoint", "", "model endpoint")
+	if err := flags.Parse(arguments); err != nil {
+		return "", usageError(err.Error())
+	}
+	if flags.NArg() != 0 {
+		return "", usageError("chat accepts only --endpoint URL")
+	}
+	return *endpoint, nil
 }
 
 func canonicalCommand(command string) string {

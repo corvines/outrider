@@ -2,6 +2,7 @@ package manifest
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -33,6 +34,7 @@ var protectedFlags = map[string]struct{}{
 	"--gpu-layers": {}, "-ngl": {}, "--fit": {}, "--flash-attn": {},
 	"--spec-type": {}, "--spec-draft-n-max": {}, "--spec-draft-model": {}, "-md": {},
 	"--cors-origins": {}, "--cors-credentials": {}, "--no-cors-credentials": {},
+	"--slots": {}, "--no-slots": {}, "--slot-save-path": {},
 }
 
 //go:embed profiles.json
@@ -127,6 +129,10 @@ type Memory struct {
 	CheckpointMinStep  *int `json:"checkpointMinStep,omitempty"`
 }
 
+type Persistence struct {
+	Enabled bool `json:"enabled"`
+}
+
 type Sampling struct {
 	Temperature   float64 `json:"temperature"`
 	TopP          float64 `json:"topP"`
@@ -163,35 +169,46 @@ type Profile struct {
 	SystemPrompt      string      `json:"systemPrompt"`
 	Sampling          Sampling    `json:"sampling"`
 	Speculation       Speculation `json:"speculation"`
+	Persistence       Persistence `json:"persistence"`
 	ExtraArgs         []string    `json:"extraArgs"`
 	Admission         Admission   `json:"admission"`
 }
 
 type StatePaths struct {
-	Root       string `json:"root"`
-	Models     string `json:"models"`
-	Model      string `json:"model"`
-	Run        string `json:"run"`
-	PID        string `json:"pid"`
-	Lock       string `json:"lock"`
-	Log        string `json:"log"`
-	Executable string `json:"executable"`
+	Root         string `json:"root"`
+	Models       string `json:"models"`
+	Model        string `json:"model"`
+	Run          string `json:"run"`
+	PID          string `json:"pid"`
+	Lock         string `json:"lock"`
+	Log          string `json:"log"`
+	Executable   string `json:"executable"`
+	Slots        string `json:"slots"`
+}
+
+type SessionState struct {
+	Enabled  bool   `json:"enabled"`
+	Slot     int    `json:"slot"`
+	Key      string `json:"key,omitempty"`
+	Filename string `json:"filename,omitempty"`
 }
 
 type Plan struct {
-	Profile        Profile    `json:"profile"`
-	Host           string     `json:"host"`
-	Port           int        `json:"port"`
-	Endpoint       string     `json:"endpoint"`
-	HealthEndpoint string     `json:"healthEndpoint"`
-	Executable     string     `json:"executable"`
-	Args           []string   `json:"args"`
-	State          StatePaths `json:"state"`
+	Profile        Profile      `json:"profile"`
+	Host           string       `json:"host"`
+	Port           int          `json:"port"`
+	Endpoint       string       `json:"endpoint"`
+	HealthEndpoint string       `json:"healthEndpoint"`
+	Executable     string       `json:"executable"`
+	Args           []string     `json:"args"`
+	State          StatePaths   `json:"state"`
+	Session        SessionState `json:"session"`
 }
 
 type BuildOptions struct {
-	Port int
-	CWD  string
+	Port         int
+	CWD          string
+	SlotSavePath string
 }
 
 type ResolveOptions struct {
@@ -273,6 +290,9 @@ func Validate(profile Profile) error {
 	if profile.Batch.MicroSize > profile.Batch.Size {
 		return manifestError("batch.microSize", "cannot exceed batch size")
 	}
+	if profile.Persistence.Enabled && profile.Batch.Parallel != 1 {
+		return manifestError("persistence", "currently requires exactly one server slot")
+	}
 	for field, value := range map[string]*int{
 		"memory.cacheRamMiB":        profile.Memory.CacheRAMMiB,
 		"memory.contextCheckpoints": profile.Memory.ContextCheckpoints,
@@ -315,6 +335,29 @@ func Validate(profile Profile) error {
 		}
 	}
 	return nil
+}
+
+func SessionKey(profile Profile) (string, error) {
+	identity := struct {
+		Schema      int         `json:"schema"`
+		Runtime     string      `json:"runtime"`
+		Model       Artifact    `json:"model"`
+		Context     Context     `json:"context"`
+		KVCache     KVCache     `json:"kvCache"`
+		Parallel    int         `json:"parallel"`
+		Speculation Speculation `json:"speculation"`
+	}{
+		Schema: 1, Runtime: LlamaRelease.Commit, Model: profile.Model,
+		Context: profile.Context, KVCache: profile.KVCache,
+		Parallel: profile.Batch.Parallel, Speculation: profile.Speculation,
+	}
+	identity.Model.LocalPath = ""
+	encoded, err := json.Marshal(identity)
+	if err != nil {
+		return "", err
+	}
+	digest := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", digest[:]), nil
 }
 
 func validateArtifact(field string, artifact Artifact) error {

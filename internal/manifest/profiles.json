@@ -33,6 +33,7 @@
       "repeatPenalty": 1.05
     },
     "speculation": { "mode": "none" },
+    "persistence": { "enabled": false },
     "extraArgs": [],
     "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
@@ -70,6 +71,7 @@
       "repeatPenalty": 1.0
     },
     "speculation": { "mode": "none" },
+    "persistence": { "enabled": true },
     "extraArgs": ["--presence-penalty", "1.5"],
     "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
@@ -110,6 +112,7 @@
       "minTokens": 0,
       "minProbability": 0
     },
+    "persistence": { "enabled": false },
     "extraArgs": [],
     "admission": {}
   }

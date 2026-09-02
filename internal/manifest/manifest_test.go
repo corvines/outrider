@@ -28,6 +28,9 @@ func TestProfiles(t *testing.T) {
 	if tiny.Model.Repo != "ggml-org/Qwen3.5-0.8B-GGUF" || tiny.Model.File != "Qwen3.5-0.8B-Q4_0.gguf" {
 		t.Fatalf("unexpected tiny model: %#v", tiny.Model)
 	}
+	if tiny.Persistence.Enabled {
+		t.Fatal("hybrid tiny profile enabled unsupported persistent KV")
+	}
 	qwen, err := Get("qwen3-1.7b")
 	if err != nil {
 		t.Fatal(err)
@@ -35,12 +38,18 @@ func TestProfiles(t *testing.T) {
 	if !qwen.Runnable || qwen.Context.Size != 32768 || qwen.Model.SHA256 != "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5" {
 		t.Fatalf("unexpected qwen profile: %#v", qwen)
 	}
+	if !qwen.Persistence.Enabled {
+		t.Fatal("pure-attention qwen profile disabled proven persistent KV")
+	}
 	large, err := Get("qwen35b-mtp")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if large.Context.Size != 32768 {
 		t.Fatalf("large context = %d", large.Context.Size)
+	}
+	if large.Persistence.Enabled {
+		t.Fatal("hybrid MTP profile enabled unsupported persistent KV")
 	}
 	if _, err := Get("missing"); err == nil {
 		t.Fatal("missing profile did not fail")
@@ -72,7 +81,8 @@ func TestProfilesRoundTripJSON(t *testing.T) {
 
 func TestTinyArguments(t *testing.T) {
 	profile, _ := Get("tiny")
-	args, err := BuildServerArgs(profile, BuildOptions{Port: 23456})
+	slots := t.TempDir()
+	args, err := BuildServerArgs(profile, BuildOptions{Port: 23456, SlotSavePath: slots})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +151,8 @@ func TestMTPPlan(t *testing.T) {
 
 func TestQwenArguments(t *testing.T) {
 	profile, _ := Get("qwen3-1.7b")
-	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort})
+	slots := t.TempDir()
+	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort, SlotSavePath: slots})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +165,9 @@ func TestQwenArguments(t *testing.T) {
 			t.Fatalf("missing %s %s: %v", flag, value, args)
 		}
 	}
+	if !containsPair(args, "--slot-save-path", slots) || !containsValue(args, "--slots") {
+		t.Fatalf("missing persistence arguments: %v", args)
+	}
 }
 
 func TestLocalModelAndExtraArguments(t *testing.T) {
@@ -161,7 +175,9 @@ func TestLocalModelAndExtraArguments(t *testing.T) {
 	profile.Model = Artifact{LocalPath: "models/local.gguf", SizeBytes: 1}
 	profile.ExtraArgs = []string{"--verbose", "--log-colors"}
 	cwd := t.TempDir()
-	args, err := BuildServerArgs(profile, BuildOptions{Port: DefaultPort, CWD: cwd})
+	args, err := BuildServerArgs(profile, BuildOptions{
+		Port: DefaultPort, CWD: cwd, SlotSavePath: t.TempDir(),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +212,7 @@ func TestRejectsIncompleteDraftArtifact(t *testing.T) {
 func TestRejectsInvalidPorts(t *testing.T) {
 	profile, _ := Get("tiny")
 	for _, port := range []int{0, 65536} {
-		if _, err := BuildServerArgs(profile, BuildOptions{Port: port}); err == nil {
+		if _, err := BuildServerArgs(profile, BuildOptions{Port: port, SlotSavePath: t.TempDir()}); err == nil {
 			t.Fatalf("accepted port %d", port)
 		}
 	}
@@ -239,9 +255,43 @@ func TestCachedPlanPreservesModelIdentity(t *testing.T) {
 	}
 }
 
+func TestPersistenceRequiresOneSlot(t *testing.T) {
+	profile, _ := Get("tiny")
+	profile.Persistence.Enabled = true
+	profile.Batch.Parallel = 2
+	if err := Validate(profile); err == nil || !strings.Contains(err.Error(), "one server slot") {
+		t.Fatalf("validation error = %v", err)
+	}
+}
+
+func TestSessionKeyTracksKVCompatibility(t *testing.T) {
+	profile, _ := Get("qwen3-1.7b")
+	first, err := SessionKey(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.KVCache.KeyType = "q4_0"
+	second, err := SessionKey(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("session key did not change with KV layout")
+	}
+}
+
 func containsPair(args []string, flag string, value string) bool {
 	for i := 0; i+1 < len(args); i++ {
 		if args[i] == flag && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func containsValue(args []string, value string) bool {
+	for _, candidate := range args {
+		if candidate == value {
 			return true
 		}
 	}

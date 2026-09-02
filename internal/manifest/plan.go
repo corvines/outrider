@@ -88,6 +88,16 @@ func BuildServerArgs(profile Profile, options BuildOptions) ([]string, error) {
 		"--min-p", formatFloat(profile.Sampling.MinP),
 		"--repeat-penalty", formatFloat(profile.Sampling.RepeatPenalty),
 	)
+	if profile.Persistence.Enabled {
+		if options.SlotSavePath == "" {
+			return nil, manifestError("persistence", "slot save path is required")
+		}
+		slotPath, err := filepath.Abs(options.SlotSavePath)
+		if err != nil {
+			return nil, err
+		}
+		args = append(args, "--slots", "--slot-save-path", slotPath)
+	}
 	args, err = appendSpeculation(args, profile.Speculation, cwd)
 	if err != nil {
 		return nil, err
@@ -121,15 +131,25 @@ func Resolve(profile Profile, options ResolveOptions) (Plan, error) {
 	if err != nil {
 		return Plan{}, err
 	}
-	args, err := BuildServerArgs(profile, BuildOptions{Port: port, CWD: options.CWD})
+	args, err := BuildServerArgs(profile, BuildOptions{
+		Port: port, CWD: options.CWD, SlotSavePath: state.Slots,
+	})
 	if err != nil {
 		return Plan{}, err
+	}
+	session := SessionState{Enabled: profile.Persistence.Enabled, Slot: 0}
+	if session.Enabled {
+		session.Key, err = SessionKey(profile)
+		if err != nil {
+			return Plan{}, err
+		}
+		session.Filename = "slot-" + session.Key + ".bin"
 	}
 	return Plan{
 		Profile: profile, Host: DefaultHost, Port: port,
 		Endpoint:       "http://" + DefaultHost + ":" + strconv.Itoa(port),
 		HealthEndpoint: "http://" + DefaultHost + ":" + strconv.Itoa(port) + "/health",
-		Executable:     executable, Args: args, State: state,
+		Executable:     executable, Args: args, State: state, Session: session,
 	}, nil
 }
 
@@ -157,11 +177,13 @@ func Paths(root string, profile Profile, cwd string) (StatePaths, error) {
 	}
 	run := filepath.Join(root, "runs", profile.ID)
 	runs := filepath.Join(root, "runs")
+	slots := filepath.Join(root, "sessions")
 	return StatePaths{
 		Root: root, Models: models, Model: model, Run: run,
 		PID: filepath.Join(runs, "active.json"), Lock: filepath.Join(runs, "lifecycle.lock"),
 		Log:        filepath.Join(run, "server.log"),
 		Executable: filepath.Join(root, "llama.cpp", LlamaRelease.Tag, LlamaRelease.Directory, "llama-server"),
+		Slots:      slots,
 	}, nil
 }
 

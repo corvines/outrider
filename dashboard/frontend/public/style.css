@@ -47,6 +47,8 @@ button { font: inherit; }
 .status-dot.offline { background: #e55b68; }
 .status-label { font-size: 15px; font-weight: 600; }
 .status-detail { color: #8c95a6; font-size: 12px; margin: 8px 0 0 20px; }
+.status-actions { display: flex; align-items: center; gap: 12px; margin: 16px 0 0 20px; }
+.action-status { color: #858585; font-size: 12px; }
 
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
 .card { border: 1px solid #2d2d2d; border-radius: 14px; background: #141414; padding: 18px; min-height: 125px; }
@@ -63,6 +65,9 @@ button { font: inherit; }
 .model { display: flex; justify-content: space-between; align-items: center; padding: 10px 11px; border: 1px solid #252d39; border-radius: 7px; }
 .model strong { font-size: 13px; font-weight: 550; }
 .model small { color: #7f8999; font-size: 11px; }
+.model-action { border: 1px solid #3b3b3b; border-radius: 7px; background: #1b1b1b; color: #bdbdbd; padding: 6px 9px; cursor: pointer; font-size: 11px; }
+.model-action:hover { border-color: #686868; color: #fff; }
+button:disabled { cursor: wait; opacity: .55; }
 .pill { color: #72b3ff; background: #173153; border-radius: 4px; padding: 4px 7px; font-size: 10px; }
 .empty { color: #8891a0; font-size: 13px; margin-top: 15px; }
 .error { color: #f29ba3; }

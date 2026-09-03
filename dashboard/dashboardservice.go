@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 )
@@ -59,11 +61,7 @@ func NewDashboardService(endpoint string) *DashboardService {
 }
 
 func (service *DashboardService) Snapshot() DashboardSnapshot {
-	snapshot := DashboardSnapshot{
-		GatewayEndpoint: service.endpoint,
-		GatewayHealth:   "offline",
-		UpdatedAt:       time.Now().UTC(),
-	}
+	snapshot := service.offlineSnapshot()
 	var status statusResponse
 	if err := service.getJSON("/admin/status", &status); err != nil {
 		snapshot.Error = err.Error()
@@ -87,6 +85,32 @@ func (service *DashboardService) Snapshot() DashboardSnapshot {
 	return snapshot
 }
 
+func (service *DashboardService) LoadModel(modelID string) DashboardSnapshot {
+	if err := service.postJSON("/admin/model", map[string]string{"model": modelID}); err != nil {
+		snapshot := service.offlineSnapshot()
+		snapshot.Error = err.Error()
+		return snapshot
+	}
+	return service.Snapshot()
+}
+
+func (service *DashboardService) StopModel() DashboardSnapshot {
+	if err := service.postJSON("/admin/stop", nil); err != nil {
+		snapshot := service.offlineSnapshot()
+		snapshot.Error = err.Error()
+		return snapshot
+	}
+	return service.Snapshot()
+}
+
+func (service *DashboardService) offlineSnapshot() DashboardSnapshot {
+	return DashboardSnapshot{
+		GatewayEndpoint: service.endpoint,
+		GatewayHealth:   "offline",
+		UpdatedAt:       time.Now().UTC(),
+	}
+}
+
 func (service *DashboardService) getJSON(path string, target any) error {
 	response, err := service.client.Get(service.endpoint + path)
 	if err != nil {
@@ -98,6 +122,31 @@ func (service *DashboardService) getJSON(path string, target any) error {
 	}
 	if err := json.NewDecoder(response.Body).Decode(target); err != nil {
 		return fmt.Errorf("invalid Outrider response: %w", err)
+	}
+	return nil
+}
+
+func (service *DashboardService) postJSON(path string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode Outrider request: %w", err)
+	}
+	request, err := http.NewRequest(http.MethodPost, service.endpoint+path, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build Outrider request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := service.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("Outrider request failed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		if len(message) > 0 {
+			return fmt.Errorf("Outrider returned HTTP %d: %s", response.StatusCode, string(message))
+		}
+		return fmt.Errorf("Outrider returned HTTP %d", response.StatusCode)
 	}
 	return nil
 }

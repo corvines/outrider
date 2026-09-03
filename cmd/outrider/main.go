@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/mattn/go-isatty"
+
 	"github.com/corvines/outrider/internal/llama"
 )
 
@@ -26,7 +28,7 @@ func main() {
 			options.Notice = renderNotice
 		}
 	}
-	if input, err := os.Stdin.Stat(); err == nil && input.Mode()&os.ModeCharDevice != 0 {
+	if isatty.IsTerminal(os.Stdin.Fd()) {
 		options.Confirm = confirm
 	}
 	output, err := runWithOptions(ctx, arguments, environmentMap(os.Environ()), options)

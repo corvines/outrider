@@ -19,6 +19,9 @@ var assets embed.FS
 //go:embed build/appicon.png
 var appIcon []byte
 
+//go:embed assets/tray-template.png
+var trayIcon []byte
+
 func main() {
 	app := application.New(application.Options{
 		Name:        "Outrider",
@@ -57,9 +60,9 @@ func main() {
 
 	tray := app.SystemTray.New()
 	if runtime.GOOS == "darwin" {
-		tray.SetTemplateIcon(appIcon)
+		tray.SetTemplateIcon(trayIcon)
 	} else {
-		tray.SetIcon(appIcon)
+		tray.SetIcon(trayIcon)
 	}
 	tray.SetLabel("Outrider")
 	tray.SetTooltip("Outrider model server")

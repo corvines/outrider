@@ -5,7 +5,7 @@ const app = document.querySelector<HTMLDivElement>("#app")!;
 app.innerHTML = `
   <div class="shell">
     <aside class="sidebar">
-      <div class="brand"><h1>Outrider</h1><small>local model server</small></div>
+      <div class="brand"><div class="brand-row"><span class="brand-mark" aria-hidden="true"></span><h1>Outrider</h1></div><small>local model server</small></div>
       <nav class="nav" aria-label="Dashboard sections">
         <button class="active" type="button" data-target="overview">Overview</button>
         <button type="button" data-target="models">Models</button>

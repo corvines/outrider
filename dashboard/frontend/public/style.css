@@ -21,8 +21,7 @@ button { font: inherit; }
   width: 230px; padding: 28px 16px 20px; border-right: 1px solid #252a34;
   background: #11141b; flex: 0 0 auto;
 }
-.brand { display: flex; align-items: center; gap: 10px; padding: 0 12px 30px; }
-.brand-mark { width: 25px; height: 25px; border-radius: 7px; background: #2086ff; box-shadow: 0 0 24px #2086ff55; }
+.brand { padding: 0 12px 30px; }
 .brand h1 { margin: 0; font-size: 18px; letter-spacing: .04em; }
 .brand small { display: block; color: #7f8798; font-size: 11px; margin-top: 3px; }
 .nav { display: grid; gap: 5px; }

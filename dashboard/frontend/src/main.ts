@@ -6,7 +6,6 @@ app.innerHTML = `
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">
-        <div class="brand-mark"></div>
         <div><h1>Outrider</h1><small>local model server</small></div>
       </div>
       <nav class="nav" aria-label="Dashboard sections">

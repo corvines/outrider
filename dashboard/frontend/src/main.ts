@@ -81,6 +81,7 @@ const modelCount = element<HTMLDivElement>("model-count");
 const models = element<HTMLDivElement>("models");
 const eyebrow = element<HTMLDivElement>("eyebrow");
 const pageTitle = element<HTMLHeadingElement>("page-title");
+const content = document.querySelector<HTMLElement>(".content")!;
 const navButtons = document.querySelectorAll<HTMLButtonElement>(".nav button[data-target]");
 const pages = document.querySelectorAll<HTMLElement>(".page");
 let memorySamples: number[] = [];
@@ -95,6 +96,7 @@ const pageMeta: Record<string, {eyebrow: string; title: string}> = {
 function showPage(target: string) {
   pages.forEach((page) => page.classList.toggle("hidden", page.id !== `page-${target}`));
   navButtons.forEach((button) => button.classList.toggle("active", button.dataset.target === target));
+  content.classList.toggle("models-active", target === "models");
   const meta = pageMeta[target] || pageMeta.overview;
   eyebrow.textContent = meta.eyebrow;
   pageTitle.textContent = meta.title;

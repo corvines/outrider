@@ -35,6 +35,7 @@ button { font: inherit; }
 .sidebar-footer { position: absolute; bottom: 16px; padding: 0 10px; color: #646c7b; font-size: 10px; }
 
 .content { max-width: 1260px; width: 100%; height: 100vh; padding: 28px 34px 34px; overflow: auto; }
+.content.models-active { overflow: hidden; }
 .topline { display: flex; justify-content: space-between; align-items: start; margin-bottom: 20px; }
 .top-actions { display: flex; align-items: center; gap: 10px; }
 .eyebrow { color: #768093; font-size: 10px; letter-spacing: .16em; text-transform: uppercase; }
@@ -72,6 +73,9 @@ button { font: inherit; }
 .metric span:first-child { color: #8992a1; }
 .metric span:last-child { color: #dce2ec; font-variant-numeric: tabular-nums; }
 .model-list { display: grid; gap: 7px; margin-top: 10px; max-height: calc(100vh - 170px); overflow-y: auto; padding-right: 4px; }
+.content.models-active #page-models { display: flex; flex-direction: column; min-height: 0; }
+.content.models-active #page-models > .card { display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.content.models-active .model-list { flex: 1; max-height: none; min-height: 0; }
 .model { display: flex; justify-content: space-between; align-items: center; padding: 7px 9px; border: 1px solid #252d39; border-radius: 6px; }
 .model strong { font-size: 12px; font-weight: 550; }
 .model small { color: #7f8999; font-size: 10px; }

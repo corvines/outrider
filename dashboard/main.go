@@ -45,8 +45,9 @@ func main() {
 		BackgroundColour: application.NewRGB(13, 15, 20),
 		URL:              "/",
 		Mac: application.MacWindow{
-			Backdrop: application.MacBackdropTranslucent,
-			TitleBar: application.MacTitleBarHiddenInset,
+			Backdrop:    application.MacBackdropTranslucent,
+			TitleBar:    application.MacTitleBarHiddenInset,
+			WindowLevel: application.MacWindowLevelNormal,
 		},
 	})
 	window.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
@@ -65,13 +66,15 @@ func main() {
 
 	menu := app.Menu.New()
 	menu.Add("Open Dashboard").OnClick(func(_ *application.Context) {
-		tray.ShowWindow()
+		window.Show().Focus()
 	})
 	menu.AddSeparator()
 	menu.Add("Quit Outrider").OnClick(func(_ *application.Context) {
 		app.Quit()
 	})
-	tray.AttachWindow(window).WindowOffset(5).SetMenu(menu)
+	// Keep the dashboard as a normal desktop window. Attaching it to the tray
+	// turns it into a popup-menu window, which makes it float above other apps.
+	tray.SetMenu(menu)
 
 	if err := app.Run(); err != nil {
 		log.Fatal(err)

@@ -46,7 +46,7 @@ func main() {
 		URL:              "/",
 		Mac: application.MacWindow{
 			Backdrop:    application.MacBackdropTranslucent,
-			TitleBar:    application.MacTitleBarHiddenInset,
+			TitleBar:    application.MacTitleBarDefault,
 			WindowLevel: application.MacWindowLevelNormal,
 		},
 	})

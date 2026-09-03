@@ -32,7 +32,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider pull <profile>
   outrider cache clean [--apply]
   outrider install [--replace-unmanaged]
-  outrider uninstall
+  outrider uninstall [--purge | --keep-state]
   outrider version
   outrider start
   outrider use <profile>
@@ -81,6 +81,7 @@ type runOptions struct {
 	Notice            func(string)
 	Chat              func(string) error
 	CurrentExecutable func() (string, error)
+	Confirm           func(string) (bool, error)
 	Human             bool
 }
 
@@ -224,20 +225,11 @@ func runWithOptions(
 			Status: "installed", Target: layout.Target, Marker: layout.Marker, SHA256: marker.SHA256,
 		}, options.Human)
 	case "uninstall":
-		if len(argv) != 1 {
-			return "", usageError("uninstall does not accept arguments")
-		}
-		if _, err := stopServices(ctx, environment); err != nil {
-			return "", err
-		}
-		layout, err := installer.ResolveUserLayout(environment["HOME"])
+		choice, err := parseUninstallArguments(argv[1:])
 		if err != nil {
 			return "", err
 		}
-		if err := installer.UninstallUser(environment["HOME"]); err != nil {
-			return "", err
-		}
-		return formatOutput(installOutput{Status: "uninstalled", Target: layout.Target}, options.Human)
+		return uninstall(ctx, environment, choice, options)
 	case "version":
 		if len(argv) != 1 {
 			return "", usageError("version does not accept arguments")
@@ -400,6 +392,100 @@ func runWithOptions(
 	default:
 		return "", usageError(fmt.Sprintf("unknown command %q; see usage", command))
 	}
+}
+
+type stateChoice int
+
+const (
+	stateAsk stateChoice = iota
+	statePurge
+	stateKeep
+)
+
+func parseUninstallArguments(arguments []string) (stateChoice, error) {
+	flags := flag.NewFlagSet("uninstall", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	purge := flags.Bool("purge", false, "remove the state root without asking")
+	keep := flags.Bool("keep-state", false, "keep the state root without asking")
+	if err := flags.Parse(arguments); err != nil {
+		return stateAsk, usageError(err.Error())
+	}
+	if flags.NArg() != 0 {
+		return stateAsk, usageError("uninstall accepts only --purge or --keep-state")
+	}
+	switch {
+	case *purge && *keep:
+		return stateAsk, usageError("--purge and --keep-state contradict each other")
+	case *purge:
+		return statePurge, nil
+	case *keep:
+		return stateKeep, nil
+	}
+	return stateAsk, nil
+}
+
+func uninstall(
+	ctx context.Context,
+	environment map[string]string,
+	choice stateChoice,
+	options runOptions,
+) (string, error) {
+	if _, err := stopServices(ctx, environment); err != nil {
+		return "", err
+	}
+	layout, err := installer.ResolveUserLayout(environment["HOME"])
+	if err != nil {
+		return "", err
+	}
+	root, err := manifest.StateRoot(environment["OUTRIDER_HOME"])
+	if err != nil {
+		return "", err
+	}
+	state, err := installer.InspectStateRoot(root)
+	if err != nil {
+		return "", err
+	}
+	remove, prompted, err := decideStateRemoval(state, choice, options)
+	if err != nil {
+		return "", err
+	}
+	if remove {
+		if err := installer.RemoveStateRoot(state.Root); err != nil {
+			return "", err
+		}
+	}
+	if err := installer.UninstallUser(environment["HOME"]); err != nil {
+		return "", err
+	}
+	output := installOutput{
+		Status: "uninstalled", Target: layout.Target,
+		StateRoot: state.Root, StateBytes: state.Bytes,
+		StateRemoved: remove, StatePrompted: prompted,
+	}
+	return formatOutput(output, options.Human)
+}
+
+// decideStateRemoval resolves the flags, the prompt, and the non-interactive
+// fallback into one answer. A run that cannot ask keeps the state root.
+func decideStateRemoval(
+	state installer.StateRootReport,
+	choice stateChoice,
+	options runOptions,
+) (bool, bool, error) {
+	switch {
+	case choice == statePurge:
+		return true, false, nil
+	case choice == stateKeep, !state.Exists, options.Confirm == nil:
+		return false, false, nil
+	}
+	prompt := fmt.Sprintf(
+		"Remove the Outrider state root %s (%s)?", state.Root, formatByteCount(state.Bytes),
+	)
+	answer, err := options.Confirm(prompt)
+	if err != nil {
+		return false, false, err
+	}
+	return answer, true, nil
 }
 
 func parseInstallArguments(arguments []string) (bool, error) {

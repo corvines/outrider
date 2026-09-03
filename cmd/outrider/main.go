@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strings"
@@ -23,12 +26,29 @@ func main() {
 			options.Notice = renderNotice
 		}
 	}
+	if input, err := os.Stdin.Stat(); err == nil && input.Mode()&os.ModeCharDevice != 0 {
+		options.Confirm = confirm
+	}
 	output, err := runWithOptions(ctx, arguments, environmentMap(os.Environ()), options)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "outrider: %v\n", err)
 		os.Exit(1)
 	}
 	_, _ = os.Stdout.WriteString(output)
+}
+
+func confirm(prompt string) (bool, error) {
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", prompt)
+	reader := bufio.NewReader(os.Stdin)
+	answer, err := reader.ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, err
+	}
+	switch strings.ToLower(strings.TrimSpace(answer)) {
+	case "y", "yes":
+		return true, nil
+	}
+	return false, nil
 }
 
 func renderNotice(message string) {

@@ -201,6 +201,90 @@ func TestUserInstallCommands(t *testing.T) {
 	}
 }
 
+func TestUninstallResolvesTheStateRoot(t *testing.T) {
+	for _, testCase := range []struct {
+		name      string
+		arguments []string
+		confirm   func(string) (bool, error)
+		removed   bool
+		prompted  bool
+	}{
+		{name: "purge", arguments: []string{"uninstall", "--purge"}, removed: true},
+		{name: "keep", arguments: []string{"uninstall", "--keep-state"}},
+		{
+			name:      "accepted prompt",
+			arguments: []string{"uninstall"},
+			confirm:   func(string) (bool, error) { return true, nil },
+			removed:   true,
+			prompted:  true,
+		},
+		{
+			name:      "declined prompt",
+			arguments: []string{"uninstall"},
+			confirm:   func(string) (bool, error) { return false, nil },
+			prompted:  true,
+		},
+		{name: "no terminal to ask", arguments: []string{"uninstall"}},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			home := t.TempDir()
+			runnerHome := filepath.Join(t.TempDir(), "Outrider")
+			model := filepath.Join(runnerHome, "models", "tiny.gguf")
+			if err := os.MkdirAll(filepath.Dir(model), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(model, []byte("0123456789"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			environment := map[string]string{"HOME": home, "OUTRIDER_HOME": runnerHome}
+			installForTest(t, environment)
+			output, err := runWithOptions(
+				context.Background(), testCase.arguments, environment,
+				runOptions{Confirm: testCase.confirm},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var removed installOutput
+			if err := json.Unmarshal([]byte(output), &removed); err != nil {
+				t.Fatal(err)
+			}
+			if removed.StateRoot != runnerHome || removed.StateBytes != 10 {
+				t.Fatalf("state report = %#v", removed)
+			}
+			if removed.StateRemoved != testCase.removed || removed.StatePrompted != testCase.prompted {
+				t.Fatalf("state decision = %#v", removed)
+			}
+			_, err = os.Stat(runnerHome)
+			if testCase.removed && !os.IsNotExist(err) {
+				t.Fatalf("state root remains: %v", err)
+			}
+			if !testCase.removed && err != nil {
+				t.Fatalf("state root removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestUninstallReportsAPromptFailure(t *testing.T) {
+	runnerHome := filepath.Join(t.TempDir(), "Outrider")
+	if err := os.MkdirAll(filepath.Join(runnerHome, "models"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{"HOME": t.TempDir(), "OUTRIDER_HOME": runnerHome}
+	installForTest(t, environment)
+	_, err := runWithOptions(
+		context.Background(), []string{"uninstall"}, environment,
+		runOptions{Confirm: func(string) (bool, error) { return false, fmt.Errorf("no answer") }},
+	)
+	if err == nil || !strings.Contains(err.Error(), "no answer") {
+		t.Fatalf("uninstall error = %v", err)
+	}
+	if _, err := os.Stat(runnerHome); err != nil {
+		t.Fatalf("state root removed after a failed prompt: %v", err)
+	}
+}
+
 func TestListAndShowProfiles(t *testing.T) {
 	root := t.TempDir()
 	ollamaRoot := t.TempDir()
@@ -322,6 +406,7 @@ func TestUsageErrors(t *testing.T) {
 		{"pull"},
 		{"install", "extra"},
 		{"uninstall", "extra"},
+		{"uninstall", "--purge", "--keep-state"},
 		{"version", "extra"},
 		{"start", "qwen35b-mtp"},
 		{"use"},
@@ -385,4 +470,18 @@ func containsSequence(values []string, sequence ...string) bool {
 		}
 	}
 	return false
+}
+
+func installForTest(t *testing.T, environment map[string]string) {
+	t.Helper()
+	source := filepath.Join(t.TempDir(), "outrider")
+	if err := os.WriteFile(source, []byte("binary"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runWithOptions(context.Background(), []string{"install"}, environment, runOptions{
+		CurrentExecutable: func() (string, error) { return source, nil },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }

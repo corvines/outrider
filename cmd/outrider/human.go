@@ -36,7 +36,7 @@ func humanOutput(value any) (string, error) {
 		), nil
 	case installOutput:
 		if output.Status == "uninstalled" {
-			return fmt.Sprintf("Removed Outrider from %s\n", output.Target), nil
+			return humanUninstall(output), nil
 		}
 		return fmt.Sprintf(
 			"Installed Outrider at %s\nAdd %s to PATH if needed.\n",
@@ -213,4 +213,20 @@ func compactTokenCount(value int) string {
 		return fmt.Sprintf("%dk", value/1000)
 	}
 	return fmt.Sprintf("%d", value)
+}
+
+func humanUninstall(output installOutput) string {
+	message := fmt.Sprintf("Removed Outrider from %s\n", output.Target)
+	switch {
+	case output.StateRemoved:
+		message += fmt.Sprintf(
+			"Removed the state root %s (%s)\n", output.StateRoot, formatByteCount(output.StateBytes),
+		)
+	case output.StateBytes > 0:
+		message += fmt.Sprintf(
+			"Kept the state root %s (%s)\nRun outrider uninstall --purge to remove it.\n",
+			output.StateRoot, formatByteCount(output.StateBytes),
+		)
+	}
+	return message
 }

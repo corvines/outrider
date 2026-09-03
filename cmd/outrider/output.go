@@ -78,10 +78,14 @@ type useOutput struct {
 }
 
 type installOutput struct {
-	Status string `json:"status"`
-	Target string `json:"target"`
-	Marker string `json:"marker,omitempty"`
-	SHA256 string `json:"sha256,omitempty"`
+	Status        string `json:"status"`
+	Target        string `json:"target"`
+	Marker        string `json:"marker,omitempty"`
+	SHA256        string `json:"sha256,omitempty"`
+	StateRoot     string `json:"stateRoot,omitempty"`
+	StateBytes    int64  `json:"stateBytes,omitempty"`
+	StateRemoved  bool   `json:"stateRemoved,omitempty"`
+	StatePrompted bool   `json:"statePrompted,omitempty"`
 }
 
 type versionOutput struct {

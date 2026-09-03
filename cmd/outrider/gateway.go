@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -14,6 +15,13 @@ import (
 	runnerprocess "github.com/corvines/outrider/internal/process"
 	"github.com/corvines/outrider/internal/switcher"
 )
+
+type gatewayDashboardStatus struct {
+	GatewayEndpoint string               `json:"gatewayEndpoint"`
+	GatewayHealth   string               `json:"gatewayHealth"`
+	Model           runnerprocess.Status `json:"model"`
+	UpdatedAt       time.Time            `json:"updatedAt"`
+}
 
 type gatewayBackend struct {
 	environment map[string]string
@@ -84,7 +92,11 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	if err != nil {
 		return fmt.Errorf("model switcher cannot listen on 127.0.0.1:%d: %w", frontPort, err)
 	}
-	server := &http.Server{Handler: gateway.Handler(), ReadHeaderTimeout: 5 * time.Second}
+	handler, err := gatewayHTTPHandler(gateway, environment, frontPort)
+	if err != nil {
+		return err
+	}
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	shutdownDone := make(chan struct{})
 	go func() {
 		defer close(shutdownDone)
@@ -99,6 +111,35 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	}
 	<-shutdownDone
 	return nil
+}
+
+func gatewayHTTPHandler(gateway *switcher.Server, environment map[string]string, frontPort int) (http.Handler, error) {
+	state, err := activeState(environment)
+	if err != nil {
+		return nil, err
+	}
+	mux := http.NewServeMux()
+	mux.Handle("/", gateway.Handler())
+	mux.HandleFunc("GET /admin/status", func(writer http.ResponseWriter, request *http.Request) {
+		model, err := runnerprocess.GetActiveStatus(request.Context(), state)
+		if err != nil {
+			writeGatewayJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+			return
+		}
+		writeGatewayJSON(writer, http.StatusOK, gatewayDashboardStatus{
+			GatewayEndpoint: fmt.Sprintf("http://%s:%d", manifest.DefaultHost, frontPort),
+			GatewayHealth:   "ok",
+			Model:           model,
+			UpdatedAt:       time.Now().UTC(),
+		})
+	})
+	return mux, nil
+}
+
+func writeGatewayJSON(writer http.ResponseWriter, status int, value any) {
+	writer.Header().Set("Content-Type", "application/json")
+	writer.WriteHeader(status)
+	_ = json.NewEncoder(writer).Encode(value)
 }
 
 func gatewayModels() ([]switcher.Model, error) {

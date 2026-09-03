@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/corvines/outrider/internal/endpoint"
@@ -84,7 +86,8 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	}
 	backendEnvironment := cloneEnvironment(environment)
 	backendEnvironment["OUTRIDER_PORT"] = strconv.Itoa(backendPort)
-	gateway, err := switcher.New(models, &gatewayBackend{environment: backendEnvironment, options: options})
+	backend := &gatewayBackend{environment: backendEnvironment, options: options}
+	gateway, err := switcher.New(models, backend)
 	if err != nil {
 		return err
 	}
@@ -92,7 +95,7 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	if err != nil {
 		return fmt.Errorf("model switcher cannot listen on 127.0.0.1:%d: %w", frontPort, err)
 	}
-	handler, err := gatewayHTTPHandler(gateway, environment, frontPort)
+	handler, err := gatewayHTTPHandler(gateway, backend, environment, frontPort)
 	if err != nil {
 		return err
 	}
@@ -113,7 +116,7 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	return nil
 }
 
-func gatewayHTTPHandler(gateway *switcher.Server, environment map[string]string, frontPort int) (http.Handler, error) {
+func gatewayHTTPHandler(gateway *switcher.Server, backend switcher.Backend, environment map[string]string, frontPort int) (http.Handler, error) {
 	state, err := activeState(environment)
 	if err != nil {
 		return nil, err
@@ -121,19 +124,54 @@ func gatewayHTTPHandler(gateway *switcher.Server, environment map[string]string,
 	mux := http.NewServeMux()
 	mux.Handle("/", gateway.Handler())
 	mux.HandleFunc("GET /admin/status", func(writer http.ResponseWriter, request *http.Request) {
-		model, err := runnerprocess.GetActiveStatus(request.Context(), state)
-		if err != nil {
+		writeGatewayStatus(writer, request, state, frontPort)
+	})
+	mux.HandleFunc("POST /admin/model", func(writer http.ResponseWriter, request *http.Request) {
+		if backend == nil {
+			writeGatewayJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": "model controls are unavailable"})
+			return
+		}
+		var payload struct {
+			Model string `json:"model"`
+		}
+		if err := decodeGatewayJSON(request, &payload); err != nil || strings.TrimSpace(payload.Model) == "" {
+			writeGatewayJSON(writer, http.StatusBadRequest, map[string]string{"error": "request must name a model"})
+			return
+		}
+		if _, err := backend.Ensure(request.Context(), strings.TrimSpace(payload.Model)); err != nil {
+			writeGatewayJSON(writer, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+		writeGatewayStatus(writer, request, state, frontPort)
+	})
+	mux.HandleFunc("POST /admin/stop", func(writer http.ResponseWriter, request *http.Request) {
+		if _, err := runnerprocess.StopActive(request.Context(), state, runnerprocess.StopOptions{}); err != nil {
 			writeGatewayJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 			return
 		}
-		writeGatewayJSON(writer, http.StatusOK, gatewayDashboardStatus{
-			GatewayEndpoint: fmt.Sprintf("http://%s:%d", manifest.DefaultHost, frontPort),
-			GatewayHealth:   "ok",
-			Model:           model,
-			UpdatedAt:       time.Now().UTC(),
-		})
+		writeGatewayStatus(writer, request, state, frontPort)
 	})
 	return mux, nil
+}
+
+func writeGatewayStatus(writer http.ResponseWriter, request *http.Request, state manifest.StatePaths, frontPort int) {
+	model, err := runnerprocess.GetActiveStatus(request.Context(), state)
+	if err != nil {
+		writeGatewayJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeGatewayJSON(writer, http.StatusOK, gatewayDashboardStatus{
+		GatewayEndpoint: fmt.Sprintf("http://%s:%d", manifest.DefaultHost, frontPort),
+		GatewayHealth:   "ok",
+		Model:           model,
+		UpdatedAt:       time.Now().UTC(),
+	})
+}
+
+func decodeGatewayJSON(request *http.Request, target any) error {
+	decoder := json.NewDecoder(io.LimitReader(request.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+	return decoder.Decode(target)
 }
 
 func writeGatewayJSON(writer http.ResponseWriter, status int, value any) {

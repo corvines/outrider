@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	runnerprocess "github.com/corvines/outrider/internal/process"
@@ -44,7 +46,7 @@ func TestGatewayHTTPHandlerReportsStoppedModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler, err := gatewayHTTPHandler(gateway, map[string]string{"OUTRIDER_HOME": t.TempDir()}, 12000)
+	handler, err := gatewayHTTPHandler(gateway, nil, map[string]string{"OUTRIDER_HOME": t.TempDir()}, 12000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,5 +69,36 @@ func TestGatewayHTTPHandlerReportsStoppedModel(t *testing.T) {
 	}
 	if status.Model.Kind != runnerprocess.StatusStopped {
 		t.Fatalf("model kind = %q", status.Model.Kind)
+	}
+}
+
+type recordingGatewayBackend struct {
+	model string
+}
+
+func (backend *recordingGatewayBackend) Ensure(_ context.Context, modelID string) (string, error) {
+	backend.model = modelID
+	return "http://127.0.0.1:12001", nil
+}
+
+func TestGatewayHTTPHandlerLoadsRequestedModel(t *testing.T) {
+	backend := &recordingGatewayBackend{}
+	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := gatewayHTTPHandler(gateway, backend, map[string]string{"OUTRIDER_HOME": t.TempDir()}, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/admin/model", strings.NewReader(`{"model":"tiny"}`))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if backend.model != "tiny" {
+		t.Fatalf("model = %q", backend.model)
 	}
 }

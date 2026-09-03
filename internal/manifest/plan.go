@@ -195,6 +195,12 @@ func DefaultRunnerHome() (string, error) {
 	return filepath.Join(home, "Library", "Caches", "Outrider"), nil
 }
 
+// StateRoot resolves the runner state root the same way a run does: an
+// explicit root, then OUTRIDER_HOME, then the default cache location.
+func StateRoot(root string) (string, error) {
+	return resolveRoot(root)
+}
+
 func resolveRoot(root string) (string, error) {
 	if root == "" {
 		root = os.Getenv("OUTRIDER_HOME")

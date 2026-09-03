@@ -261,9 +261,18 @@ function renderLoading(loading: Awaited<ReturnType<typeof DashboardService.Snaps
 }
 
 function renderLogs(lines: string[], logFile: string) {
-  logsContent.textContent = lines.length ? lines.join("\n") : "No log output yet.";
+  logsContent.innerHTML = lines.length ? lines.map(formatLogLine).join("\n") : "No log output yet.";
   logsFile.textContent = logFile ? `Source: ${logFile}` : "";
   logsContent.scrollTop = logsContent.scrollHeight;
+}
+
+function formatLogLine(line: string) {
+  const severity = /\b[Ee](?:rror)?\b|failed|exception/i.test(line)
+    ? "log-error"
+    : /\b[Ww](?:arn(?:ing)?)?\b/i.test(line)
+      ? "log-warn"
+      : "log-info";
+  return `<span class="log-line ${severity}">${escapeHTML(line)}</span>`;
 }
 
 let actionInFlight = false;

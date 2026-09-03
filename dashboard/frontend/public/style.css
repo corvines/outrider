@@ -117,7 +117,11 @@ button:disabled { cursor: wait; opacity: .55; }
 .confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .log-empty { margin: 12px 0 0; color: #8992a1; font: inherit; font-size: 12px; white-space: pre-wrap; }
 .logs-card { min-height: 0; }
-.logs-card .log-empty { min-height: 360px; max-height: calc(100vh - 260px); overflow: auto; padding: 12px; border: 1px solid #252d39; border-radius: 6px; background: #101010; color: #c5ccd8; line-height: 1.45; }
+.logs-card .log-empty { min-height: 360px; max-height: calc(100vh - 260px); overflow: auto; padding: 12px; border: 1px solid #252d39; border-radius: 6px; background: #101010; color: #c5ccd8; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace; font-size: 11px; line-height: 1.45; white-space: pre; }
+.log-line { display: inline; }
+.log-info { color: #c5ccd8; }
+.log-warn { color: #e3b56b; }
+.log-error { color: #f29ba3; }
 .log-empty code { color: #dce2ec; font-family: inherit; }
 .error { color: #f29ba3; }
 

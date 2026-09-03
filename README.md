@@ -37,3 +37,11 @@ Stop both the gateway and active model with:
 ```sh
 outrider stop
 ```
+
+Inspect interrupted downloads and quarantined cache files without changing anything:
+
+```sh
+outrider cache clean
+```
+
+Add `--apply` to remove the listed cleanup candidates. The active Gemma 4 26B partial and its resume metadata are always preserved.

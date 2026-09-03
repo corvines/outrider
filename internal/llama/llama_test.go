@@ -114,6 +114,26 @@ func TestEnsureModelRejectsMismatchedCachedContent(t *testing.T) {
 	}
 }
 
+func TestVerifySHA256ReportsProgress(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "model.gguf")
+	payload := []byte("GGUFmodel")
+	if err := os.WriteFile(path, payload, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	expected := sha256.Sum256(payload)
+	var events []DownloadProgress
+	if err := verifySHA256WithProgress(
+		context.Background(), path, hex.EncodeToString(expected[:]), "cached model", "verify tiny",
+		func(progress DownloadProgress) { events = append(events, progress) },
+	); err != nil {
+		t.Fatal(err)
+	}
+	last := events[len(events)-1]
+	if last.Name != "verify tiny" || last.Downloaded != int64(len(payload)) || last.Total != int64(len(payload)) || !last.Done {
+		t.Fatalf("last progress = %#v", last)
+	}
+}
+
 func TestEnsureModelRejectsMismatchedDownloadAndCleansPartial(t *testing.T) {
 	root := t.TempDir()
 	profile, _ := manifest.Get("tiny")

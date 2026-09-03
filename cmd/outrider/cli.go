@@ -30,6 +30,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider models
   outrider show <profile>
   outrider pull <profile>
+  outrider cache clean [--apply]
   outrider install [--replace-unmanaged]
   outrider uninstall
   outrider version
@@ -77,9 +78,16 @@ type runSession struct {
 
 type runOptions struct {
 	Progress          llama.ProgressFunc
+	Notice            func(string)
 	Chat              func(string) error
 	CurrentExecutable func() (string, error)
 	Human             bool
+}
+
+func (options runOptions) notice(format string, arguments ...any) {
+	if options.Notice != nil {
+		options.Notice(fmt.Sprintf(format, arguments...))
+	}
 }
 
 type downloadTracker struct {
@@ -172,6 +180,19 @@ func runWithOptions(
 			return "", usageError("pull expects exactly one runnable profile id")
 		}
 		output, err := pullProfile(ctx, argv[1], environment, options)
+		if err != nil {
+			return "", err
+		}
+		return formatOutput(output, options.Human)
+	case "cache":
+		if len(argv) < 2 || argv[1] != "clean" {
+			return "", usageError("cache expects the clean subcommand")
+		}
+		apply, err := parseCacheCleanArguments(argv[2:])
+		if err != nil {
+			return "", err
+		}
+		output, err := cleanCache(environment, apply)
 		if err != nil {
 			return "", err
 		}
@@ -684,6 +705,7 @@ func startSession(
 		}, nil
 	}
 	runtimeStartedAt := time.Now()
+	options.notice("Checking the llama.cpp runtime...")
 	executable, err := llama.EnsureServer(ctx, llama.EnsureServerOptions{
 		StateRoot: initialPlan.State.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"], Progress: tracker.report,
 	})
@@ -701,11 +723,13 @@ func startSession(
 		return runSession{}, &admission.Error{Report: report}
 	}
 	modelStartedAt := time.Now()
+	options.notice("Verifying the %s model cache (%s)...", profile.ID, formatByteCount(profile.Model.SizeBytes))
 	if _, err := llama.EnsureModelCached(ctx, profile, plan, llama.EnsureModelOptions{Progress: tracker.report}); err != nil {
 		return runSession{}, err
 	}
 	modelPreparationMS := elapsedMilliseconds(modelStartedAt)
 	modelDownloadMS := tracker.totalMS - runtimeDownloadMS
+	options.notice("Loading %s and waiting for it to become ready...", profile.ID)
 	status, err := runnerprocess.StartWithLock(ctx, plan, runnerprocess.StartOptions{}, lock)
 	if err != nil {
 		return runSession{}, err

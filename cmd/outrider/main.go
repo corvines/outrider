@@ -19,6 +19,9 @@ func main() {
 	options := runOptions{Human: !jsonOutput}
 	if terminal, err := os.Stderr.Stat(); err == nil && terminal.Mode()&os.ModeCharDevice != 0 {
 		options.Progress = renderDownloadProgress
+		if !jsonOutput {
+			options.Notice = renderNotice
+		}
 	}
 	output, err := runWithOptions(ctx, arguments, environmentMap(os.Environ()), options)
 	if err != nil {
@@ -26,6 +29,10 @@ func main() {
 		os.Exit(1)
 	}
 	_, _ = os.Stdout.WriteString(output)
+}
+
+func renderNotice(message string) {
+	_, _ = fmt.Fprintln(os.Stderr, message)
 }
 
 func outputArguments(arguments []string) ([]string, bool) {

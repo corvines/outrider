@@ -20,6 +20,8 @@ func humanOutput(value any) (string, error) {
 			"Ready: %s\nModel: %s (%s)\nRuntime: %s\n",
 			output.Profile, output.Model, formatByteCount(output.SizeBytes), output.Runtime,
 		), nil
+	case cacheCleanupOutput:
+		return humanCacheCleanup(output), nil
 	case upOutput:
 		return humanUp(output), nil
 	case runnerprocess.Status:
@@ -28,8 +30,9 @@ func humanOutput(value any) (string, error) {
 		return humanServiceStatus(output), nil
 	case useOutput:
 		return fmt.Sprintf(
-			"Active model: %s\nVera endpoint: %s/v1\nMemory: %s\nLog: %s\n",
-			output.Profile, output.Endpoint, formatByteCount(output.Model.ResidentBytes), output.Model.LogFile,
+			"Active model: %s\nVera endpoint: %s/v1\nVera model: %s\nMemory: %s\nLog: %s\n",
+			output.Profile, output.Endpoint, output.Profile,
+			formatByteCount(output.Model.ResidentBytes), output.Model.LogFile,
 		), nil
 	case installOutput:
 		if output.Status == "uninstalled" {
@@ -60,6 +63,38 @@ func humanOutput(value any) (string, error) {
 	default:
 		return encodeOutput(value)
 	}
+}
+
+func humanCacheCleanup(output cacheCleanupOutput) string {
+	var result strings.Builder
+	if output.DryRun {
+		_, _ = fmt.Fprintf(&result, "Cache cleanup (dry run): %s\n", output.Root)
+	} else {
+		_, _ = fmt.Fprintf(&result, "Cache cleanup: removed %d file(s), reclaimed %s\n", len(output.Removed), formatByteCount(output.ReclaimedBytes))
+	}
+	for _, entry := range output.Protected {
+		_, _ = fmt.Fprintf(&result, "Preserved: %s (%s)\n", entry.Path, entry.Reason)
+	}
+	if output.DryRun {
+		if len(output.Candidates) == 0 {
+			_, _ = fmt.Fprintln(&result, "No cleanup candidates found.")
+		} else {
+			_, _ = fmt.Fprintf(&result, "Would remove %d file(s), reclaiming %s:\n", len(output.Candidates), formatByteCount(cacheCleanupBytes(output.Candidates)))
+			for _, entry := range output.Candidates {
+				_, _ = fmt.Fprintf(&result, "  %s (%s)\n", entry.Path, entry.Reason)
+			}
+			_, _ = fmt.Fprintln(&result, "Re-run with `outrider cache clean --apply` to remove them.")
+		}
+	}
+	return result.String()
+}
+
+func cacheCleanupBytes(entries []cacheCleanupEntry) int64 {
+	var total int64
+	for _, entry := range entries {
+		total += entry.SizeBytes
+	}
+	return total
 }
 
 func humanProfileList(output profileListOutput) string {

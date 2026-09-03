@@ -78,6 +78,7 @@ func useGatewayModel(
 	if _, err := runnableProfile(profileID); err != nil {
 		return useOutput{}, err
 	}
+	options.notice("Checking the Outrider gateway...")
 	gatewayPlan, err := gatewayProcessPlan(environment)
 	if err != nil {
 		return useOutput{}, err
@@ -96,6 +97,7 @@ func useGatewayModel(
 	backendEnvironment := cloneEnvironment(environment)
 	backendEnvironment["OUTRIDER_PORT"] = fmt.Sprintf("%d", backendPort)
 	backend := gatewayBackend{environment: backendEnvironment, options: options}
+	options.notice("Switching to %s...", profileID)
 	if _, err := backend.Ensure(ctx, profileID); err != nil {
 		return useOutput{}, err
 	}

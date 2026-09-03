@@ -361,6 +361,16 @@ func TestEnvironmentMapKeepsEqualsInValues(t *testing.T) {
 	}
 }
 
+func TestRunOptionsNotice(t *testing.T) {
+	var messages []string
+	options := runOptions{Notice: func(message string) { messages = append(messages, message) }}
+	options.notice("Loading %s...", "tiny")
+	if len(messages) != 1 || messages[0] != "Loading tiny..." {
+		t.Fatalf("messages = %#v", messages)
+	}
+	runOptions{}.notice("ignored")
+}
+
 func containsSequence(values []string, sequence ...string) bool {
 	for index := 0; index+len(sequence) <= len(values); index++ {
 		matches := true

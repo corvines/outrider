@@ -153,7 +153,9 @@ func EnsureModelCached(
 			cause := runnerErrorf("cached model is not a valid GGUF file: %s", modelPath)
 			return "", quarantineCachedModel(modelPath, cause)
 		}
-		if err := verifySHA256(modelPath, profile.Model.SHA256, "cached model"); err != nil {
+		if err := verifySHA256WithProgress(
+			ctx, modelPath, profile.Model.SHA256, "cached model", "verify "+profile.ID, options.Progress,
+		); err != nil {
 			return "", quarantineCachedModel(modelPath, err)
 		}
 		return modelPath, nil
@@ -186,7 +188,9 @@ func EnsureModelCached(
 		_ = os.Remove(resumeMetadataPath(partial))
 		return "", runnerErrorf("downloaded model is not a valid GGUF file: %s", partial)
 	}
-	if err := verifySHA256(partial, profile.Model.SHA256, "downloaded model"); err != nil {
+	if err := verifySHA256WithProgress(
+		ctx, partial, profile.Model.SHA256, "downloaded model", "verify "+profile.ID, options.Progress,
+	); err != nil {
 		_ = os.Remove(partial)
 		_ = os.Remove(resumeMetadataPath(partial))
 		return "", err

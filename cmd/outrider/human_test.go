@@ -42,6 +42,21 @@ func TestHumanStatusShowsHealthAndMemory(t *testing.T) {
 	}
 }
 
+func TestHumanUseOutputNamesVeraSelection(t *testing.T) {
+	text, err := humanOutput(useOutput{
+		Profile: "qwen35b-mtp", Endpoint: "http://127.0.0.1:11435",
+		Model: runnerprocess.Status{ResidentBytes: 22 * 1024 * 1024 * 1024, LogFile: "/tmp/server.log"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"Active model: qwen35b-mtp", "Vera endpoint: http://127.0.0.1:11435/v1", "Vera model: qwen35b-mtp"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("human output missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestHumanServiceStatusShowsGatewayAndModel(t *testing.T) {
 	health := true
 	text, err := humanOutput(serviceStatusOutput{

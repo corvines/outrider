@@ -181,9 +181,21 @@ func newProgressReader(
 	total int64,
 	progress ProgressFunc,
 ) *progressReader {
+	return newNamedProgressReader(
+		reader, strings.TrimSuffix(filepath.Base(destination), ".part"), offset, total, progress,
+	)
+}
+
+func newNamedProgressReader(
+	reader io.Reader,
+	name string,
+	offset int64,
+	total int64,
+	progress ProgressFunc,
+) *progressReader {
 	now := time.Now()
 	reporter := &progressReader{
-		reader: reader, name: strings.TrimSuffix(filepath.Base(destination), ".part"),
+		reader: reader, name: name,
 		offset: offset, total: total, startedAt: now, lastReport: now, progress: progress,
 	}
 	reporter.report(false)
@@ -344,7 +356,18 @@ func ensureArchive(ctx context.Context, archive string, release manifest.Release
 }
 
 func verifySHA256(path string, expected string, label string) error {
-	digest, err := sha256File(path)
+	return verifySHA256WithProgress(context.Background(), path, expected, label, "", nil)
+}
+
+func verifySHA256WithProgress(
+	ctx context.Context,
+	path string,
+	expected string,
+	label string,
+	progressName string,
+	progress ProgressFunc,
+) error {
+	digest, err := sha256FileWithProgress(ctx, path, progressName, progress)
 	if err != nil {
 		return runnerError("could not hash "+label, err)
 	}
@@ -355,16 +378,45 @@ func verifySHA256(path string, expected string, label string) error {
 }
 
 func sha256File(path string) (string, error) {
+	return sha256FileWithProgress(context.Background(), path, "", nil)
+}
+
+func sha256FileWithProgress(
+	ctx context.Context,
+	path string,
+	progressName string,
+	progress ProgressFunc,
+) (string, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
-	digest := sha256.New()
-	if _, err := io.Copy(digest, file); err != nil {
+	info, err := file.Stat()
+	if err != nil {
 		return "", err
 	}
+	digest := sha256.New()
+	reporter := newNamedProgressReader(&contextReader{ctx: ctx, reader: file}, progressName, 0, info.Size(), progress)
+	if _, err := io.Copy(digest, reporter); err != nil {
+		return "", err
+	}
+	reporter.finish()
 	return hex.EncodeToString(digest.Sum(nil)), nil
+}
+
+type contextReader struct {
+	ctx    context.Context
+	reader io.Reader
+}
+
+func (reader *contextReader) Read(buffer []byte) (int, error) {
+	select {
+	case <-reader.ctx.Done():
+		return 0, reader.ctx.Err()
+	default:
+		return reader.reader.Read(buffer)
+	}
 }
 
 func isValidGGUF(path string) (bool, error) {

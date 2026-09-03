@@ -64,7 +64,6 @@ func main() {
 	} else {
 		tray.SetIcon(trayIcon)
 	}
-	tray.SetLabel("Outrider")
 	tray.SetTooltip("Outrider model server")
 
 	menu := app.Menu.New()

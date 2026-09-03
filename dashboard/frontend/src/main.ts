@@ -16,7 +16,7 @@ app.innerHTML = `
     </aside>
     <main class="content">
       <div class="topline">
-        <div><div id="eyebrow" class="eyebrow">Outrider / Overview</div><h2 id="page-title" class="title">Serving status</h2></div>
+        <h2 id="page-title" class="title">Serving status</h2>
         <div class="top-actions"><span id="action-status" class="action-status"></span><button id="refresh" class="refresh" type="button">Refresh</button></div>
       </div>
 
@@ -38,12 +38,12 @@ app.innerHTML = `
       </div>
 
       <div id="page-models" class="page hidden">
-        <div class="page-intro"><div class="eyebrow">Model catalog</div><p>Download, load, or remove local models.</p><form id="download-form" class="download-form"><input id="download-path" type="text" placeholder="Hugging Face path or HTTPS URL" aria-label="Model URL or path"><button class="refresh" type="submit">Add &amp; download</button></form></div>
+        <div class="page-intro"><p>Download, load, or remove local models.</p><form id="download-form" class="download-form"><input id="download-path" type="text" placeholder="Hugging Face path or HTTPS URL" aria-label="Model URL or path"><button class="refresh" type="submit">Add &amp; download</button></form></div>
         <article class="card card-full"><div id="models" class="model-list"><div class="empty">Loading catalog…</div></div></article>
       </div>
 
       <div id="page-performance" class="page hidden">
-        <div class="page-intro"><div class="eyebrow">Performance</div><p>Runtime signals from the resident model and gateway.</p></div>
+        <div class="page-intro"><p>Runtime signals from the resident model and gateway.</p></div>
         <section class="grid">
           <article class="card card-wide"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="performance-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">sampled while the dashboard is open</div></article>
           <article class="card"><div class="card-title">Context window</div><div id="performance-context" class="card-value">—</div><div class="card-note">active model window</div></article>
@@ -53,7 +53,7 @@ app.innerHTML = `
       </div>
 
       <div id="page-logs" class="page hidden">
-        <div class="page-intro"><div class="eyebrow">Logs</div><p>Inspect the gateway when a model load or request needs diagnosis.</p></div>
+        <div class="page-intro"><p>Inspect the gateway when a model load or request needs diagnosis.</p></div>
         <article class="card card-full logs-card"><div class="card-title">Current run log</div><pre id="logs-content" class="log-empty">Waiting for the current run log…</pre><div id="logs-file" class="card-note"></div></article>
       </div>
     </main>
@@ -102,7 +102,6 @@ const deleteDialog = element<HTMLDivElement>("delete-dialog");
 const deleteDialogMessage = element<HTMLParagraphElement>("delete-dialog-message");
 const deleteCancel = element<HTMLButtonElement>("delete-cancel");
 const deleteConfirm = element<HTMLButtonElement>("delete-confirm");
-const eyebrow = element<HTMLDivElement>("eyebrow");
 const pageTitle = element<HTMLHeadingElement>("page-title");
 const content = document.querySelector<HTMLElement>(".content")!;
 const navButtons = document.querySelectorAll<HTMLButtonElement>(".nav button[data-target]");
@@ -111,11 +110,11 @@ let memorySamples: number[] = [];
 const hiddenModels = new Set<string>();
 let pendingDeleteModel = "";
 
-const pageMeta: Record<string, {eyebrow: string; title: string}> = {
-  overview: {eyebrow: "Outrider / Overview", title: "Serving status"},
-  models: {eyebrow: "Outrider / Models", title: "Model catalog"},
-  performance: {eyebrow: "Outrider / Performance", title: "Runtime signals"},
-  logs: {eyebrow: "Outrider / Logs", title: "Gateway logs"},
+const pageMeta: Record<string, {title: string}> = {
+  overview: {title: "Serving status"},
+  models: {title: "Model catalog"},
+  performance: {title: "Runtime signals"},
+  logs: {title: "Gateway logs"},
 };
 
 function showPage(target: string) {
@@ -123,7 +122,6 @@ function showPage(target: string) {
   navButtons.forEach((button) => button.classList.toggle("active", button.dataset.target === target));
   content.classList.toggle("models-active", target === "models");
   const meta = pageMeta[target] || pageMeta.overview;
-  eyebrow.textContent = meta.eyebrow;
   pageTitle.textContent = meta.title;
 }
 

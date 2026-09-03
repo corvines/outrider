@@ -57,7 +57,7 @@ button { font: inherit; }
 .status-actions { display: flex; align-items: center; gap: 10px; margin: 12px 0 0 17px; }
 .action-status { color: #858585; font-size: 11px; }
 
-.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start; }
 .card { border: 1px solid #2d2d2d; border-radius: 10px; background: #141414; padding: 14px; min-height: 96px; }
 .card-full { width: 100%; }
 .card-wide { grid-column: span 2; }

@@ -7,49 +7,49 @@
 :root {
   color-scheme: dark;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-  background: #0d0f14;
-  color: #e7e9ee;
+  background: #0d0d0d;
+  color: #e7e7e7;
   font-synthesis: none;
 }
 
 * { box-sizing: border-box; }
-body { margin: 0; min-width: 820px; background: #0d0f14; }
+body { margin: 0; min-width: 820px; background: #0d0d0d; }
 button { font: inherit; }
 
 .shell { display: flex; min-height: 100vh; }
 .sidebar {
   width: 230px; padding: 28px 16px 20px; border-right: 1px solid #252a34;
-  background: #11141b; flex: 0 0 auto;
+  background: #111; flex: 0 0 auto;
 }
 .brand { padding: 0 12px 30px; }
 .brand h1 { margin: 0; font-size: 18px; letter-spacing: .04em; }
 .brand small { display: block; color: #7f8798; font-size: 11px; margin-top: 3px; }
 .nav { display: grid; gap: 5px; }
 .nav button {
-  border: 0; border-radius: 8px; background: transparent; color: #9198a7; text-align: left;
+  border: 1px solid transparent; border-radius: 9px; background: transparent; color: #919191; text-align: left;
   padding: 10px 12px; cursor: pointer; font-size: 13px;
 }
-.nav button:hover, .nav button.active { background: #1d2735; color: #f1f5fb; }
-.nav button.active { box-shadow: inset 2px 0 #2188ff; }
+.nav button:hover, .nav button.active { background: #1c1c1c; border-color: #303030; color: #f1f1f1; }
+.nav button.active { box-shadow: none; }
 .sidebar-footer { position: absolute; bottom: 22px; padding: 0 12px; color: #646c7b; font-size: 11px; }
 
 .content { max-width: 1260px; width: 100%; padding: 40px 48px 56px; }
 .topline { display: flex; justify-content: space-between; align-items: start; margin-bottom: 28px; }
 .eyebrow { color: #768093; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; }
 .title { margin: 8px 0 0; font-size: 30px; font-weight: 700; letter-spacing: -.03em; }
-.refresh { border: 1px solid #303746; border-radius: 7px; background: #171b24; color: #aeb6c5; padding: 8px 13px; cursor: pointer; font-size: 12px; }
-.refresh:hover { border-color: #438fe5; color: #fff; }
+.refresh { border: 1px solid #383838; border-radius: 8px; background: #181818; color: #b5b5b5; padding: 8px 13px; cursor: pointer; font-size: 12px; }
+.refresh:hover { border-color: #666; color: #fff; }
 
-.status-card { border: 1px solid #2a3240; border-radius: 12px; padding: 20px 22px; background: linear-gradient(135deg, #172132, #131923); margin-bottom: 22px; }
+.status-card { border: 1px solid #303030; border-radius: 14px; padding: 20px 22px; background: #151515; margin-bottom: 22px; }
 .status-row { display: flex; align-items: center; gap: 11px; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #f9a33a; }
-.status-dot.ok { background: #26d17b; box-shadow: 0 0 13px #26d17b99; }
+.status-dot.ok { background: #41bd79; }
 .status-dot.offline { background: #e55b68; }
 .status-label { font-size: 15px; font-weight: 600; }
 .status-detail { color: #8c95a6; font-size: 12px; margin: 8px 0 0 20px; }
 
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
-.card { border: 1px solid #272e3a; border-radius: 10px; background: #12161e; padding: 18px; min-height: 125px; }
+.card { border: 1px solid #2d2d2d; border-radius: 14px; background: #141414; padding: 18px; min-height: 125px; }
 .card-wide { grid-column: span 2; }
 .card-title { color: #7e8798; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
 .card-value { margin-top: 13px; color: #f1f3f8; font-size: 21px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -20,6 +20,8 @@ app.innerHTML = `
         <div class="top-actions"><span id="action-status" class="action-status"></span><button id="refresh" class="refresh" type="button">Refresh</button></div>
       </div>
 
+      <div id="loading-progress" class="loading-progress hidden"><div class="loading-progress-row"><span id="loading-label">Loading model…</span><span id="loading-percent">—</span><button id="pause-model" class="refresh" type="button" disabled>Pause loading</button></div><div class="progress-track"><div id="loading-bar" class="progress-fill"></div></div><div id="loading-detail" class="card-note"></div></div>
+
       <div id="page-overview" class="page">
         <section class="status-card">
           <div class="status-row"><span id="status-dot" class="status-dot"></span><span id="status-label" class="status-label">Checking gateway…</span></div>
@@ -27,8 +29,8 @@ app.innerHTML = `
           <div class="status-actions"><button id="stop-model" class="refresh" type="button" disabled>Stop model</button></div>
         </section>
         <section class="grid">
-          <article class="card card-wide"><div class="card-title">Active model</div><div id="model" class="card-value">—</div><div id="model-note" class="card-note">No model loaded</div></article>
-          <article class="card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><svg id="memory-chart" class="sparkline" viewBox="0 0 180 78" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="24" y1="8" x2="24" y2="60" /><line class="chart-axis" x1="24" y1="60" x2="176" y2="60" /><line class="chart-grid" x1="24" y1="8" x2="176" y2="8" /><polyline /><text class="chart-label" data-axis-high x="0" y="11">—</text><text class="chart-label" data-axis-low x="0" y="63">—</text><text class="chart-label" data-axis-old x="24" y="75">older</text><text class="chart-label" data-axis-now x="153" y="75">now</text></svg><div class="card-note">resident set</div></article>
+          <article class="card active-model-card"><div class="card-title">Active model</div><div id="model" class="card-value">—</div><div id="model-note" class="card-note">No model loaded</div></article>
+          <article class="card card-wide memory-card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="memory-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">resident set</div></article>
           <article class="card"><div class="card-title">Context</div><div id="context" class="card-value">—</div><div class="card-note">loaded model window</div></article>
           <article class="card card-wide"><div class="card-title">Gateway</div><div class="metric"><span>Endpoint</span><span id="endpoint">—</span></div><div class="metric"><span>Last updated</span><span id="updated">—</span></div></article>
           <article class="card"><div class="card-title">Advertised models</div><div id="model-count" class="card-value">—</div><div class="card-note">available to clients</div></article>
@@ -36,25 +38,32 @@ app.innerHTML = `
       </div>
 
       <div id="page-models" class="page hidden">
-        <div class="page-intro"><div class="eyebrow">Model catalog</div><p>Choose which local model Outrider should serve.</p></div>
+        <div class="page-intro"><div class="eyebrow">Model catalog</div><p>Download, load, or remove local models.</p><form id="download-form" class="download-form"><input id="download-path" type="text" placeholder="Hugging Face path or HTTPS URL" aria-label="Model URL or path"><button class="refresh" type="submit">Add &amp; download</button></form></div>
         <article class="card card-full"><div id="models" class="model-list"><div class="empty">Loading catalog…</div></div></article>
       </div>
 
       <div id="page-performance" class="page hidden">
         <div class="page-intro"><div class="eyebrow">Performance</div><p>Runtime signals from the resident model and gateway.</p></div>
         <section class="grid">
-          <article class="card card-wide"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><svg id="performance-chart" class="sparkline" viewBox="0 0 180 78" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="24" y1="8" x2="24" y2="60" /><line class="chart-axis" x1="24" y1="60" x2="176" y2="60" /><line class="chart-grid" x1="24" y1="8" x2="176" y2="8" /><polyline /><text class="chart-label" data-axis-high x="0" y="11">—</text><text class="chart-label" data-axis-low x="0" y="63">—</text><text class="chart-label" data-axis-old x="24" y="75">older</text><text class="chart-label" data-axis-now x="153" y="75">now</text></svg><div class="card-note">sampled while the dashboard is open</div></article>
+          <article class="card card-wide"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="performance-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">sampled while the dashboard is open</div></article>
           <article class="card"><div class="card-title">Context window</div><div id="performance-context" class="card-value">—</div><div class="card-note">active model window</div></article>
-          <article class="card card-wide"><div class="card-title">Active model</div><div id="performance-model" class="card-value">—</div><div class="card-note">resident model</div></article>
+          <article class="card active-model-card"><div class="card-title">Active model</div><div id="performance-model" class="card-value">—</div><div class="card-note">resident model</div></article>
           <article class="card"><div class="card-title">Gateway</div><div id="performance-endpoint" class="card-value">—</div><div id="performance-updated" class="card-note">—</div></article>
         </section>
       </div>
 
       <div id="page-logs" class="page hidden">
         <div class="page-intro"><div class="eyebrow">Logs</div><p>Inspect the gateway when a model load or request needs diagnosis.</p></div>
-        <article class="card card-full"><div class="card-title">Gateway log</div><pre id="logs-content" class="log-empty">Live log streaming is not wired yet. Use <code>outrider logs</code> for the current run.</pre></article>
+        <article class="card card-full logs-card"><div class="card-title">Current run log</div><pre id="logs-content" class="log-empty">Waiting for the current run log…</pre><div id="logs-file" class="card-note"></div></article>
       </div>
     </main>
+  </div>
+  <div id="delete-dialog" class="confirm-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title">
+    <div class="confirm-card">
+      <div id="delete-dialog-title" class="card-title">Delete model?</div>
+      <p id="delete-dialog-message">This removes the local model file.</p>
+      <div class="confirm-actions"><button id="delete-cancel" class="model-action" type="button">No, keep it</button><button id="delete-confirm" class="model-action model-delete" type="button">Yes, delete</button></div>
+    </div>
   </div>
 `;
 
@@ -63,6 +72,12 @@ const dot = element<HTMLSpanElement>("status-dot");
 const label = element<HTMLSpanElement>("status-label");
 const detail = element<HTMLDivElement>("status-detail");
 const stopModel = element<HTMLButtonElement>("stop-model");
+const pauseModel = element<HTMLButtonElement>("pause-model");
+const loadingProgress = element<HTMLDivElement>("loading-progress");
+const loadingLabel = element<HTMLSpanElement>("loading-label");
+const loadingPercent = element<HTMLSpanElement>("loading-percent");
+const loadingBar = element<HTMLDivElement>("loading-bar");
+const loadingDetail = element<HTMLDivElement>("loading-detail");
 const actionStatus = element<HTMLSpanElement>("action-status");
 const model = element<HTMLDivElement>("model");
 const modelNote = element<HTMLDivElement>("model-note");
@@ -79,12 +94,22 @@ const performanceEndpoint = element<HTMLDivElement>("performance-endpoint");
 const performanceUpdated = element<HTMLDivElement>("performance-updated");
 const modelCount = element<HTMLDivElement>("model-count");
 const models = element<HTMLDivElement>("models");
+const logsContent = element<HTMLPreElement>("logs-content");
+const logsFile = element<HTMLDivElement>("logs-file");
+const downloadForm = element<HTMLFormElement>("download-form");
+const downloadPath = element<HTMLInputElement>("download-path");
+const deleteDialog = element<HTMLDivElement>("delete-dialog");
+const deleteDialogMessage = element<HTMLParagraphElement>("delete-dialog-message");
+const deleteCancel = element<HTMLButtonElement>("delete-cancel");
+const deleteConfirm = element<HTMLButtonElement>("delete-confirm");
 const eyebrow = element<HTMLDivElement>("eyebrow");
 const pageTitle = element<HTMLHeadingElement>("page-title");
 const content = document.querySelector<HTMLElement>(".content")!;
 const navButtons = document.querySelectorAll<HTMLButtonElement>(".nav button[data-target]");
 const pages = document.querySelectorAll<HTMLElement>(".page");
 let memorySamples: number[] = [];
+const hiddenModels = new Set<string>();
+let pendingDeleteModel = "";
 
 const pageMeta: Record<string, {eyebrow: string; title: string}> = {
   overview: {eyebrow: "Outrider / Overview", title: "Serving status"},
@@ -148,7 +173,10 @@ function renderOffline(error: string) {
   performanceUpdated.textContent = "—";
   modelCount.textContent = "—";
   models.innerHTML = `<div class="empty">No catalog available while Outrider is offline.</div>`;
+  renderLogs([], "");
   stopModel.disabled = true;
+  pauseModel.disabled = true;
+  loadingProgress.classList.add("hidden");
 }
 
 async function refresh() {
@@ -164,28 +192,78 @@ function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Sna
   if (snapshot.error) { renderOffline(snapshot.error); return; }
   const healthy = snapshot.gatewayHealth === "ok";
   const legacy = snapshot.gatewayHealth === "legacy";
+  const loading = snapshot.loading;
   dot.className = `status-dot ${healthy ? "ok" : legacy ? "legacy" : ""}`;
-  label.textContent = healthy ? "Gateway healthy" : legacy ? "Gateway connected (legacy)" : "Gateway unavailable";
+  label.textContent = loading ? "Loading model" : healthy ? "Gateway healthy" : legacy ? "Gateway connected (legacy)" : "Gateway unavailable";
   detail.textContent = legacy
     ? "Catalog is read-only; restart Outrider from the current build to enable controls"
-    : snapshot.model.preset ? `${snapshot.model.preset} · ${snapshot.model.kind}` : "No model loaded";
+    : loading ? `Preparing ${loading.model}…` : snapshot.model.preset ? `${snapshot.model.preset} · ${snapshot.model.kind}` : "No model loaded";
+  renderLoading(loading);
   setModelText(snapshot.model.preset || "No model loaded");
   modelNote.textContent = snapshot.model.startedAt ? `started ${new Date(snapshot.model.startedAt).toLocaleString()}` : "Ready for a model";
   const residentBytes = snapshot.model.residentBytes ?? 0;
   setMemoryText(formatBytes(residentBytes));
   renderMemoryChart(residentBytes);
+  renderLogs(snapshot.logLines ?? [], snapshot.logFile ?? "");
   endpoint.textContent = snapshot.gatewayEndpoint || "—";
   updated.textContent = snapshot.updatedAt ? new Date(snapshot.updatedAt).toLocaleTimeString() : "—";
   performanceEndpoint.textContent = snapshot.gatewayEndpoint || "—";
   performanceUpdated.textContent = snapshot.updatedAt ? `updated ${new Date(snapshot.updatedAt).toLocaleTimeString()}` : "—";
-  const catalog = snapshot.models ?? [];
+  const catalog = (snapshot.models ?? []).filter((entry) => !hiddenModels.has(entry.id));
   modelCount.textContent = `${catalog.length}`;
   const activeModel = catalog.find((entry) => entry.id === snapshot.model.preset);
   setContextText(formatContext(activeModel?.context ?? 0));
-  stopModel.disabled = !healthy || snapshot.model.kind !== "running";
-  models.innerHTML = catalog.length ? catalog.map((entry) => `
-    <div class="model"><div><strong>${escapeHTML(entry.id)}</strong><br><small>${formatContext(entry.context)} context · ${escapeHTML(entry.quantization || "unknown quant")}</small></div><button class="model-action" type="button" data-model="${escapeHTML(entry.id)}" ${healthy ? "" : "disabled"}>${entry.id === snapshot.model.preset ? "Loaded" : healthy ? "Load" : "Read-only"}</button></div>
-  `).join("") : `<div class="empty">No runnable models advertised.</div>`;
+  stopModel.disabled = !healthy || snapshot.model.kind !== "running" || !!loading;
+  pauseModel.disabled = !healthy || !loading || loading.phase === "paused" || loading.phase === "error";
+  pauseModel.textContent = loading?.phase === "paused" ? "Paused" : "Pause loading";
+  models.innerHTML = catalog.length ? catalog.map((entry) => {
+    const active = entry.id === snapshot.model.preset && snapshot.model.kind === "running";
+    const disabled = !healthy || !!loading ? "disabled" : "";
+    let actions = "";
+    if (entry.custom) {
+      actions = `<span class="loaded-badge downloaded-badge">Downloaded</span><button class="model-action model-delete" type="button" data-action="delete" data-model="${escapeHTML(entry.id)}" ${disabled}>Delete</button>`;
+    } else if (active) {
+      actions = `<span class="loaded-badge">Loaded</span><button class="model-action" type="button" data-action="unload" data-model="${escapeHTML(entry.id)}" ${disabled}>Unload</button>`;
+    } else if (!entry.cached) {
+      actions = `<button class="model-action" type="button" data-action="download" data-model="${escapeHTML(entry.id)}" ${disabled}>Download</button>`;
+    } else {
+      actions = `<button class="model-action" type="button" data-action="load" data-model="${escapeHTML(entry.id)}" ${disabled}>Load</button>`;
+      if (entry.canDelete) actions += `<button class="model-action model-delete" type="button" data-action="delete" data-model="${escapeHTML(entry.id)}" ${disabled}>Delete</button>`;
+      else if (entry.protected) actions += `<span class="protected-badge">Protected</span>`;
+    }
+    const detail = entry.custom ? `${formatBytes(entry.sizeBytes ?? 0)} · downloaded file` : `${formatContext(entry.context)} context · ${escapeHTML(entry.quantization || "unknown quant")}`;
+    return `<div class="model"><div><strong>${escapeHTML(entry.id)}</strong><br><small>${detail}</small></div><div class="model-actions">${actions}</div></div>`;
+  }).join("") : `<div class="empty">No models available.</div>`;
+}
+
+function renderLoading(loading: Awaited<ReturnType<typeof DashboardService.Snapshot>>["loading"]) {
+  if (!loading) {
+    loadingProgress.classList.add("hidden");
+    return;
+  }
+  loadingProgress.classList.remove("hidden");
+  loadingLabel.textContent = `${loading.phase} ${loading.model}`;
+  if (loading.error) {
+    loadingDetail.textContent = loading.error;
+    loadingBar.style.width = "0";
+    loadingPercent.textContent = "—";
+    return;
+  }
+  const downloaded = loading.downloaded ?? 0;
+  const total = loading.total ?? 0;
+  const hasTotal = total > 0;
+  const percent = hasTotal ? Math.min(100, (downloaded / total) * 100) : 0;
+  loadingPercent.textContent = hasTotal ? `${percent.toFixed(0)}%` : "—";
+  loadingBar.style.width = `${percent}%`;
+  const rate = (loading.bytesPerSecond ?? 0) > 0 ? ` · ${formatBytes(loading.bytesPerSecond ?? 0)}/s` : "";
+  const eta = (loading.etaSeconds ?? 0) > 0 ? ` · ${loading.etaSeconds}s remaining` : "";
+  loadingDetail.textContent = `${formatBytes(downloaded)} / ${formatBytes(total)}${rate}${eta}`;
+}
+
+function renderLogs(lines: string[], logFile: string) {
+  logsContent.textContent = lines.length ? lines.join("\n") : "No log output yet.";
+  logsFile.textContent = logFile ? `Source: ${logFile}` : "";
+  logsContent.scrollTop = logsContent.scrollHeight;
 }
 
 let actionInFlight = false;
@@ -193,6 +271,7 @@ let actionInFlight = false;
 function setActionBusy(busy: boolean) {
   actionInFlight = busy;
   stopModel.disabled = busy;
+  pauseModel.disabled = busy;
   models.querySelectorAll<HTMLButtonElement>("button[data-model]").forEach((button) => { button.disabled = busy || button.dataset.model === undefined; });
 }
 
@@ -223,14 +302,15 @@ function renderMemoryChart(bytes: number) {
   updateChartLabels(memoryChart, minimum, maximum);
   updateChartLabels(performanceChart, minimum, maximum);
   if (minimum === maximum) {
-    clearChart(memoryChart);
-    clearChart(performanceChart);
+    const points = "42,73 350,73";
+    memoryChart.querySelector("polyline")?.setAttribute("points", points);
+    performanceChart.querySelector("polyline")?.setAttribute("points", points);
     return;
   }
   const range = maximum - minimum || 1;
   const points = memorySamples.map((sample, index) => {
-    const x = memorySamples.length === 1 ? 100 : 24 + (index / (memorySamples.length - 1)) * 152;
-    const y = 60 - ((sample - minimum) / range) * 52;
+    const x = memorySamples.length === 1 ? 196 : 42 + (index / (memorySamples.length - 1)) * 308;
+    const y = 132 - ((sample - minimum) / range) * 118;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   memoryChart.querySelector("polyline")?.setAttribute("points", points);
@@ -242,8 +322,9 @@ function clearChart(chart: SVGSVGElement) {
 }
 
 function updateChartLabels(chart: SVGSVGElement, minimum: number, maximum: number) {
-  chart.querySelector("[data-axis-high]")!.textContent = formatBytes(maximum);
-  chart.querySelector("[data-axis-low]")!.textContent = formatBytes(minimum);
+  const container = chart.parentElement!;
+  container.querySelector<HTMLElement>("[data-axis-high]")!.textContent = formatBytes(maximum);
+  container.querySelector<HTMLElement>("[data-axis-low]")!.textContent = formatBytes(minimum);
 }
 
 function escapeHTML(value: string) {
@@ -253,11 +334,54 @@ function escapeHTML(value: string) {
 navButtons.forEach((button) => button.addEventListener("click", () => showPage(button.dataset.target || "overview")));
 element<HTMLButtonElement>("refresh").addEventListener("click", refresh);
 stopModel.addEventListener("click", () => void runAction("Stopping model…", () => DashboardService.StopModel()));
+pauseModel.addEventListener("click", () => void runAction("Pausing model load…", () => DashboardService.PauseModel()));
+downloadForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  const path = downloadPath.value.trim();
+  if (!path) {
+    actionStatus.textContent = "Enter a model URL or path";
+    return;
+  }
+  void runAction(`Downloading ${path}…`, async () => {
+    const snapshot = await DashboardService.DownloadPath(path);
+    if (!snapshot.error) downloadPath.value = "";
+    return snapshot;
+  });
+});
 models.addEventListener("click", (event) => {
   if (!(event.target instanceof HTMLElement)) return;
   const button = event.target.closest<HTMLButtonElement>("button[data-model]");
   const modelID = button?.dataset.model;
-  if (modelID) void runAction(`Loading ${modelID}…`, () => DashboardService.LoadModel(modelID));
+  const action = button?.dataset.action;
+  if (!modelID || !action) return;
+  if (action === "delete") {
+    pendingDeleteModel = modelID;
+    deleteDialogMessage.textContent = `Delete the cached ${modelID} model from this computer?`;
+    deleteDialog.classList.remove("hidden");
+    deleteConfirm.focus();
+  } else if (action === "unload") {
+    void runAction("Unloading model…", () => DashboardService.StopModel());
+  } else if (action === "download") {
+    void runAction(`Downloading ${modelID}…`, () => DashboardService.DownloadModel(modelID));
+  } else {
+    void runAction(`Loading ${modelID}…`, () => DashboardService.LoadModel(modelID));
+  }
+});
+
+deleteCancel.addEventListener("click", () => {
+  pendingDeleteModel = "";
+  deleteDialog.classList.add("hidden");
+});
+deleteConfirm.addEventListener("click", () => {
+  const modelID = pendingDeleteModel;
+  pendingDeleteModel = "";
+  deleteDialog.classList.add("hidden");
+  if (!modelID) return;
+  void runAction(`Deleting ${modelID}…`, async () => {
+    const snapshot = await DashboardService.DeleteModel(modelID);
+    if (!snapshot.error) hiddenModels.add(modelID);
+    return snapshot;
+  });
 });
 
 showPage("overview");

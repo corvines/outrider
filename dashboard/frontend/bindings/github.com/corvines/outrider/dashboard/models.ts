@@ -6,14 +6,33 @@ export interface AdvertisedModel {
     "context": number;
     "trainingContext"?: number;
     "quantization"?: string;
+    "sizeBytes"?: number;
+    "cached": boolean;
+    "canDelete": boolean;
+    "protected"?: boolean;
+    "custom"?: boolean;
 }
 
 export interface DashboardSnapshot {
     "gatewayEndpoint": string;
     "gatewayHealth": string;
     "model": ModelSnapshot;
+    "loading"?: LoadingSnapshot | null;
     "models": AdvertisedModel[] | null;
+    "logFile"?: string;
+    "logLines"?: string[] | null;
     "updatedAt": string;
+    "error"?: string;
+}
+
+export interface LoadingSnapshot {
+    "model": string;
+    "phase": string;
+    "startedAt": string;
+    "downloaded"?: number;
+    "total"?: number;
+    "bytesPerSecond"?: number;
+    "etaSeconds"?: number;
     "error"?: string;
 }
 

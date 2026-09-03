@@ -9,5 +9,6 @@ export {
 export type {
     AdvertisedModel,
     DashboardSnapshot,
+    LoadingSnapshot,
     ModelSnapshot
 } from "./models.js";

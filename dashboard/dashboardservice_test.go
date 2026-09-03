@@ -21,6 +21,8 @@ func TestDashboardServiceLoadModelPostsToGateway(t *testing.T) {
 			loaded = payload.Model
 		case "/admin/status":
 			_, _ = writer.Write([]byte(`{"gatewayEndpoint":"http://127.0.0.1:11435","gatewayHealth":"ok","model":{"kind":"stopped"}}`))
+		case "/admin/logs":
+			_, _ = writer.Write([]byte(`{"logFile":"/tmp/gateway.log","lines":["ready","request failed"]}`))
 		case "/v1/models":
 			_, _ = writer.Write([]byte(`{"data":[]}`))
 		default:
@@ -35,6 +37,9 @@ func TestDashboardServiceLoadModelPostsToGateway(t *testing.T) {
 	}
 	if snapshot.Error != "" {
 		t.Fatalf("snapshot error = %q", snapshot.Error)
+	}
+	if len(snapshot.LogLines) != 2 || snapshot.LogLines[1] != "request failed" {
+		t.Fatalf("log lines = %#v", snapshot.LogLines)
 	}
 }
 

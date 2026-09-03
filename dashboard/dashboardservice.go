@@ -10,15 +10,19 @@ import (
 )
 
 type DashboardService struct {
-	endpoint string
-	client   *http.Client
+	endpoint      string
+	client        *http.Client
+	controlClient *http.Client
 }
 
 type DashboardSnapshot struct {
 	GatewayEndpoint string            `json:"gatewayEndpoint"`
 	GatewayHealth   string            `json:"gatewayHealth"`
 	Model           ModelSnapshot     `json:"model"`
+	Loading         *LoadingSnapshot  `json:"loading,omitempty"`
 	Models          []AdvertisedModel `json:"models"`
+	LogFile         string            `json:"logFile,omitempty"`
+	LogLines        []string          `json:"logLines,omitempty"`
 	UpdatedAt       time.Time         `json:"updatedAt"`
 	Error           string            `json:"error,omitempty"`
 }
@@ -31,18 +35,41 @@ type ModelSnapshot struct {
 	StartedAt     string `json:"startedAt,omitempty"`
 }
 
+type LoadingSnapshot struct {
+	Model          string    `json:"model"`
+	Phase          string    `json:"phase"`
+	StartedAt      time.Time `json:"startedAt"`
+	Downloaded     int64     `json:"downloaded,omitempty"`
+	Total          int64     `json:"total,omitempty"`
+	BytesPerSecond float64   `json:"bytesPerSecond,omitempty"`
+	ETASeconds     int64     `json:"etaSeconds,omitempty"`
+	Error          string    `json:"error,omitempty"`
+}
+
 type AdvertisedModel struct {
 	ID              string `json:"id"`
 	Context         int    `json:"context"`
 	TrainingContext int    `json:"trainingContext,omitempty"`
 	Quantization    string `json:"quantization,omitempty"`
+	SizeBytes       int64  `json:"sizeBytes,omitempty"`
+	Cached          bool   `json:"cached"`
+	CanDelete       bool   `json:"canDelete"`
+	Protected       bool   `json:"protected,omitempty"`
+	Custom          bool   `json:"custom,omitempty"`
 }
 
 type statusResponse struct {
-	GatewayEndpoint string        `json:"gatewayEndpoint"`
-	GatewayHealth   string        `json:"gatewayHealth"`
-	Model           ModelSnapshot `json:"model"`
-	UpdatedAt       time.Time     `json:"updatedAt"`
+	GatewayEndpoint string            `json:"gatewayEndpoint"`
+	GatewayHealth   string            `json:"gatewayHealth"`
+	Model           ModelSnapshot     `json:"model"`
+	Models          []AdvertisedModel `json:"models"`
+	Loading         *LoadingSnapshot  `json:"loading,omitempty"`
+	UpdatedAt       time.Time         `json:"updatedAt"`
+}
+
+type logsResponse struct {
+	LogFile string   `json:"logFile"`
+	Lines   []string `json:"lines"`
 }
 
 type modelsResponse struct {
@@ -57,7 +84,11 @@ type modelsResponse struct {
 }
 
 func NewDashboardService(endpoint string) *DashboardService {
-	return &DashboardService{endpoint: endpoint, client: &http.Client{Timeout: 3 * time.Second}}
+	return &DashboardService{
+		endpoint:      endpoint,
+		client:        &http.Client{Timeout: 3 * time.Second},
+		controlClient: &http.Client{Timeout: 30 * time.Minute},
+	}
 }
 
 func (service *DashboardService) Snapshot() DashboardSnapshot {
@@ -78,8 +109,18 @@ func (service *DashboardService) Snapshot() DashboardSnapshot {
 	snapshot.GatewayEndpoint = status.GatewayEndpoint
 	snapshot.GatewayHealth = status.GatewayHealth
 	snapshot.Model = status.Model
+	snapshot.Loading = status.Loading
 	snapshot.UpdatedAt = status.UpdatedAt
-	_ = service.populateCatalog(&snapshot)
+	var logs logsResponse
+	if err := service.getJSON("/admin/logs?lines=200", &logs); err == nil {
+		snapshot.LogFile = logs.LogFile
+		snapshot.LogLines = logs.Lines
+	}
+	if len(status.Models) > 0 {
+		snapshot.Models = status.Models
+	} else {
+		_ = service.populateCatalog(&snapshot)
+	}
 	return snapshot
 }
 
@@ -107,8 +148,44 @@ func (service *DashboardService) LoadModel(modelID string) DashboardSnapshot {
 	return service.Snapshot()
 }
 
+func (service *DashboardService) DownloadModel(modelID string) DashboardSnapshot {
+	if err := service.postJSON("/admin/download", map[string]string{"model": modelID}); err != nil {
+		snapshot := service.offlineSnapshot()
+		snapshot.Error = err.Error()
+		return snapshot
+	}
+	return service.Snapshot()
+}
+
+func (service *DashboardService) DownloadPath(path string) DashboardSnapshot {
+	if err := service.postJSON("/admin/download-path", map[string]string{"path": path}); err != nil {
+		snapshot := service.offlineSnapshot()
+		snapshot.Error = err.Error()
+		return snapshot
+	}
+	return service.Snapshot()
+}
+
+func (service *DashboardService) DeleteModel(modelID string) DashboardSnapshot {
+	if err := service.postJSON("/admin/delete", map[string]string{"model": modelID}); err != nil {
+		snapshot := service.offlineSnapshot()
+		snapshot.Error = err.Error()
+		return snapshot
+	}
+	return service.Snapshot()
+}
+
 func (service *DashboardService) StopModel() DashboardSnapshot {
 	if err := service.postJSON("/admin/stop", nil); err != nil {
+		snapshot := service.offlineSnapshot()
+		snapshot.Error = err.Error()
+		return snapshot
+	}
+	return service.Snapshot()
+}
+
+func (service *DashboardService) PauseModel() DashboardSnapshot {
+	if err := service.postJSON("/admin/pause", nil); err != nil {
 		snapshot := service.offlineSnapshot()
 		snapshot.Error = err.Error()
 		return snapshot
@@ -149,7 +226,7 @@ func (service *DashboardService) postJSON(path string, payload any) error {
 		return fmt.Errorf("build Outrider request: %w", err)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	response, err := service.client.Do(request)
+	response, err := service.controlClient.Do(request)
 	if err != nil {
 		return fmt.Errorf("Outrider request failed: %w", err)
 	}

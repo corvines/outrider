@@ -49,3 +49,29 @@ func TestDashboardServiceStopModelReportsGatewayError(t *testing.T) {
 		t.Fatal("expected stop error")
 	}
 }
+
+func TestDashboardServiceSnapshotFallsBackToLegacyGateway(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/admin/status":
+			writer.WriteHeader(http.StatusNotFound)
+		case "/v1/models":
+			writer.Header().Set("Content-Type", "application/json")
+			_, _ = writer.Write([]byte(`{"data":[{"id":"qwen35b-mtp","meta":{"n_ctx":32768,"n_ctx_train":131072},"quantization":"UD-Q4_K_M"}]}`))
+		default:
+			writer.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	snapshot := NewDashboardService(server.URL).Snapshot()
+	if snapshot.Error != "" {
+		t.Fatalf("Snapshot() error = %q", snapshot.Error)
+	}
+	if snapshot.GatewayHealth != "legacy" {
+		t.Fatalf("GatewayHealth = %q, want legacy", snapshot.GatewayHealth)
+	}
+	if len(snapshot.Models) != 1 || snapshot.Models[0].ID != "qwen35b-mtp" {
+		t.Fatalf("Models = %+v, want qwen35b-mtp", snapshot.Models)
+	}
+}

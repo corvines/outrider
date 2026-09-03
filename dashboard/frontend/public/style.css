@@ -44,6 +44,7 @@ button { font: inherit; }
 .status-row { display: flex; align-items: center; gap: 11px; }
 .status-dot { width: 9px; height: 9px; border-radius: 50%; background: #f9a33a; }
 .status-dot.ok { background: #41bd79; }
+.status-dot.legacy { background: #d6a84f; }
 .status-dot.offline { background: #e55b68; }
 .status-label { font-size: 15px; font-weight: 600; }
 .status-detail { color: #8c95a6; font-size: 12px; margin: 8px 0 0 20px; }
@@ -52,6 +53,7 @@ button { font: inherit; }
 
 .grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 15px; }
 .card { border: 1px solid #2d2d2d; border-radius: 14px; background: #141414; padding: 18px; min-height: 125px; }
+.card[id] { scroll-margin-top: 28px; }
 .card-wide { grid-column: span 2; }
 .card-title { color: #7e8798; font-size: 11px; letter-spacing: .1em; text-transform: uppercase; }
 .card-value { margin-top: 13px; color: #f1f3f8; font-size: 21px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -64,25 +64,38 @@ func (service *DashboardService) Snapshot() DashboardSnapshot {
 	snapshot := service.offlineSnapshot()
 	var status statusResponse
 	if err := service.getJSON("/admin/status", &status); err != nil {
-		snapshot.Error = err.Error()
+		// Older gateways predate the dashboard API but still expose the
+		// OpenAI-compatible model catalog. Keep the dashboard useful while
+		// making it explicit that controls require a current gateway.
+		if catalogErr := service.populateCatalog(&snapshot); catalogErr != nil {
+			snapshot.Error = err.Error()
+			return snapshot
+		}
+		snapshot.GatewayHealth = "legacy"
+		snapshot.UpdatedAt = time.Now().UTC()
 		return snapshot
 	}
 	snapshot.GatewayEndpoint = status.GatewayEndpoint
 	snapshot.GatewayHealth = status.GatewayHealth
 	snapshot.Model = status.Model
 	snapshot.UpdatedAt = status.UpdatedAt
-
-	var models modelsResponse
-	if err := service.getJSON("/v1/models", &models); err == nil {
-		snapshot.Models = make([]AdvertisedModel, 0, len(models.Data))
-		for _, model := range models.Data {
-			snapshot.Models = append(snapshot.Models, AdvertisedModel{
-				ID: model.ID, Context: model.Meta.Context, TrainingContext: model.Meta.TrainingContext,
-				Quantization: model.Quantization,
-			})
-		}
-	}
+	_ = service.populateCatalog(&snapshot)
 	return snapshot
+}
+
+func (service *DashboardService) populateCatalog(snapshot *DashboardSnapshot) error {
+	var models modelsResponse
+	if err := service.getJSON("/v1/models", &models); err != nil {
+		return err
+	}
+	snapshot.Models = make([]AdvertisedModel, 0, len(models.Data))
+	for _, model := range models.Data {
+		snapshot.Models = append(snapshot.Models, AdvertisedModel{
+			ID: model.ID, Context: model.Meta.Context, TrainingContext: model.Meta.TrainingContext,
+			Quantization: model.Quantization,
+		})
+	}
+	return nil
 }
 
 func (service *DashboardService) LoadModel(modelID string) DashboardSnapshot {

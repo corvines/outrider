@@ -9,10 +9,10 @@ app.innerHTML = `
         <div><h1>Outrider</h1><small>local model server</small></div>
       </div>
       <nav class="nav" aria-label="Dashboard sections">
-        <button class="active" type="button">Overview</button>
-        <button type="button">Models</button>
-        <button type="button">Performance</button>
-        <button type="button">Logs</button>
+        <button class="active" type="button" data-target="overview">Overview</button>
+        <button type="button" data-target="models-panel">Models</button>
+        <button type="button" data-target="performance-panel">Performance</button>
+        <button type="button" data-target="logs-panel">Logs</button>
       </nav>
       <div class="sidebar-footer">dashboard beta</div>
     </aside>
@@ -21,18 +21,19 @@ app.innerHTML = `
         <div><div class="eyebrow">Outrider / Overview</div><h2 class="title">Serving status</h2></div>
         <button id="refresh" class="refresh" type="button">Refresh</button>
       </div>
-      <section class="status-card">
+      <section id="overview" class="status-card">
         <div class="status-row"><span id="status-dot" class="status-dot"></span><span id="status-label" class="status-label">Checking gateway…</span></div>
         <div id="status-detail" class="status-detail">Connecting to the local Outrider gateway</div>
         <div class="status-actions"><button id="stop-model" class="refresh" type="button" disabled>Stop model</button><span id="action-status" class="action-status"></span></div>
       </section>
       <section class="grid">
         <article class="card card-wide"><div class="card-title">Active model</div><div id="model" class="card-value">—</div><div id="model-note" class="card-note">No model loaded</div></article>
-        <article class="card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><svg id="memory-chart" class="sparkline" viewBox="0 0 160 36" role="img" aria-label="Resident memory trend"><polyline /></svg><div class="card-note">resident set</div></article>
+        <article id="performance-panel" class="card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><svg id="memory-chart" class="sparkline" viewBox="0 0 160 36" role="img" aria-label="Resident memory trend"><polyline /></svg><div class="card-note">resident set</div></article>
         <article class="card"><div class="card-title">Context</div><div id="context" class="card-value">—</div><div class="card-note">loaded model window</div></article>
         <article class="card card-wide"><div class="card-title">Gateway</div><div class="metric"><span>Endpoint</span><span id="endpoint">—</span></div><div class="metric"><span>Last updated</span><span id="updated">—</span></div></article>
         <article class="card"><div class="card-title">Advertised models</div><div id="model-count" class="card-value">—</div><div class="card-note">available to clients</div></article>
-        <article class="card card-wide"><div class="card-title">Model catalog</div><div id="models" class="model-list"><div class="empty">Loading catalog…</div></div></article>
+        <article id="models-panel" class="card card-wide"><div class="card-title">Model catalog</div><div id="models" class="model-list"><div class="empty">Loading catalog…</div></div></article>
+        <article id="logs-panel" class="card card-wide"><div class="card-title">Logs</div><div class="empty">Gateway logs are available from the Outrider CLI. Live log streaming is next.</div></article>
       </section>
     </main>
   </div>
@@ -53,6 +54,7 @@ const endpoint = element<HTMLSpanElement>("endpoint");
 const updated = element<HTMLSpanElement>("updated");
 const modelCount = element<HTMLDivElement>("model-count");
 const models = element<HTMLDivElement>("models");
+const navButtons = document.querySelectorAll<HTMLButtonElement>(".nav button[data-target]");
 let memorySamples: number[] = [];
 
 function formatBytes(bytes: number) {
@@ -99,9 +101,12 @@ async function refresh() {
 function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Snapshot>>) {
   if (snapshot.error) { renderOffline(snapshot.error); return; }
   const healthy = snapshot.gatewayHealth === "ok";
-  dot.className = `status-dot ${healthy ? "ok" : ""}`;
-  label.textContent = healthy ? "Gateway healthy" : "Gateway unavailable";
-  detail.textContent = snapshot.model.preset ? `${snapshot.model.preset} · ${snapshot.model.kind}` : "No model loaded";
+  const legacy = snapshot.gatewayHealth === "legacy";
+  dot.className = `status-dot ${healthy ? "ok" : legacy ? "legacy" : ""}`;
+  label.textContent = healthy ? "Gateway healthy" : legacy ? "Gateway connected (legacy)" : "Gateway unavailable";
+  detail.textContent = legacy
+    ? "Model catalog is available; update Outrider to enable controls"
+    : snapshot.model.preset ? `${snapshot.model.preset} · ${snapshot.model.kind}` : "No model loaded";
   model.textContent = snapshot.model.preset || "No model loaded";
   modelNote.textContent = snapshot.model.startedAt ? `started ${new Date(snapshot.model.startedAt).toLocaleString()}` : "Ready for a model";
   const residentBytes = snapshot.model.residentBytes ?? 0;
@@ -113,9 +118,9 @@ function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Sna
   modelCount.textContent = `${catalog.length}`;
   const activeModel = catalog.find((entry) => entry.id === snapshot.model.preset);
   context.textContent = formatContext(activeModel?.context ?? 0);
-  stopModel.disabled = snapshot.model.kind !== "running";
+  stopModel.disabled = !healthy || snapshot.model.kind !== "running";
   models.innerHTML = catalog.length ? catalog.map((entry) => `
-    <div class="model"><div><strong>${escapeHTML(entry.id)}</strong><br><small>${formatContext(entry.context)} context · ${escapeHTML(entry.quantization || "unknown quant")}</small></div><button class="model-action" type="button" data-model="${escapeHTML(entry.id)}">${entry.id === snapshot.model.preset ? "Loaded" : "Load"}</button></div>
+    <div class="model"><div><strong>${escapeHTML(entry.id)}</strong><br><small>${formatContext(entry.context)} context · ${escapeHTML(entry.quantization || "unknown quant")}</small></div><button class="model-action" type="button" data-model="${escapeHTML(entry.id)}" ${healthy ? "" : "disabled"}>${entry.id === snapshot.model.preset ? "Loaded" : healthy ? "Load" : "Update required"}</button></div>
   `).join("") : `<div class="empty">No runnable models advertised.</div>`;
 }
 
@@ -161,6 +166,10 @@ function escapeHTML(value: string) {
 }
 
 element<HTMLButtonElement>("refresh").addEventListener("click", refresh);
+navButtons.forEach((button) => button.addEventListener("click", () => {
+  navButtons.forEach((candidate) => candidate.classList.toggle("active", candidate === button));
+  document.getElementById(button.dataset.target || "overview")?.scrollIntoView({behavior: "smooth", block: "start"});
+}));
 stopModel.addEventListener("click", () => void runAction("Stopping model…", () => DashboardService.StopModel()));
 models.addEventListener("click", (event) => {
   if (!(event.target instanceof HTMLElement)) return;

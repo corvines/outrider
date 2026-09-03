@@ -28,13 +28,14 @@ app.innerHTML = `
           <div id="status-detail" class="status-detail">Connecting to the local Outrider gateway</div>
           <div class="status-actions"><button id="stop-model" class="refresh" type="button" disabled>Stop model</button></div>
         </section>
-        <section class="grid">
-          <article class="card active-model-card"><div class="card-title">Active model</div><div id="model" class="card-value">—</div><div id="model-note" class="card-note">No model loaded</div></article>
-          <article class="card card-wide memory-card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="memory-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">resident set</div></article>
-          <article class="card"><div class="card-title">Context</div><div id="context" class="card-value">—</div><div class="card-note">loaded model window</div></article>
-          <article class="card card-wide"><div class="card-title">Gateway</div><div class="metric"><span>Endpoint</span><span id="endpoint">—</span></div><div class="metric"><span>Last updated</span><span id="updated">—</span></div></article>
-          <article class="card"><div class="card-title">Advertised models</div><div id="model-count" class="card-value">—</div><div class="card-note">available to clients</div></article>
+        <section class="rows">
+          <div class="row"><div class="row-head"><span class="row-label">Active model</span><span id="model-note" class="row-note">No model loaded</span></div><div id="model" class="row-value">—</div></div>
+          <div class="row"><div class="row-head"><span class="row-label">Context</span><span class="row-note">loaded model window</span></div><div id="context" class="row-value">—</div></div>
+          <div class="row"><div class="row-head"><span class="row-label">Advertised models</span><span class="row-note">available to clients</span></div><div id="model-count" class="row-value">—</div></div>
+          <div class="row"><div class="row-head"><span class="row-label">Endpoint</span></div><div id="endpoint" class="row-value">—</div></div>
+          <div class="row"><div class="row-head"><span class="row-label">Last updated</span></div><div id="updated" class="row-value">—</div></div>
         </section>
+        <article class="card chart-card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="memory-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">resident set</div></article>
       </div>
 
       <div id="page-models" class="page hidden">
@@ -44,12 +45,12 @@ app.innerHTML = `
 
       <div id="page-performance" class="page hidden">
         <div class="page-intro"><p>Runtime signals from the resident model and gateway.</p></div>
-        <section class="grid">
-          <article class="card card-wide"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="performance-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">sampled while the dashboard is open</div></article>
-          <article class="card"><div class="card-title">Context window</div><div id="performance-context" class="card-value">—</div><div class="card-note">active model window</div></article>
-          <article class="card active-model-card"><div class="card-title">Active model</div><div id="performance-model" class="card-value">—</div><div class="card-note">resident model</div></article>
-          <article class="card"><div class="card-title">Gateway</div><div id="performance-endpoint" class="card-value">—</div><div id="performance-updated" class="card-note">—</div></article>
+        <section class="rows">
+          <div class="row"><div class="row-head"><span class="row-label">Context window</span><span class="row-note">active model window</span></div><div id="performance-context" class="row-value">—</div></div>
+          <div class="row"><div class="row-head"><span class="row-label">Active model</span><span class="row-note">resident model</span></div><div id="performance-model" class="row-value">—</div></div>
+          <div class="row"><div class="row-head"><span class="row-label">Gateway</span><span id="performance-updated" class="row-note">—</span></div><div id="performance-endpoint" class="row-value">—</div></div>
         </section>
+        <article class="card chart-card"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="performance-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">sampled while the dashboard is open</div></article>
       </div>
 
       <div id="page-logs" class="page hidden">

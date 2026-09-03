@@ -1,15 +1,8 @@
-@font-face {
-  font-family: Inter;
-  src: url('/Inter-Medium.ttf') format('truetype');
-  font-weight: 400 800;
-}
-
 :root {
   color-scheme: dark;
-  font-family: Inter, -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   background: #0d0d0d;
   color: #e7e7e7;
-  font-synthesis: none;
 }
 
 * { box-sizing: border-box; }
@@ -79,7 +72,7 @@ button { font: inherit; }
 .sparkline { display: block; width: 100%; height: 184px; margin-top: 0; overflow: visible; }
 .chart-axis { stroke: #3a3f49; stroke-width: 1; }
 .chart-grid { stroke: #252a32; stroke-width: 1; stroke-dasharray: 2 3; }
-.chart-label { fill: #6f7888; font-size: 7px; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; }
+.chart-label { fill: #6f7888; font-size: 7px; font-family: inherit; }
 .chart-y-labels { position: absolute; inset: 0 auto 40px 0; display: flex; flex-direction: column; justify-content: space-between; pointer-events: none; }
 .chart-x-labels { display: flex; justify-content: space-between; margin: 4px 2.8% 0 11.7%; color: #6f7888; font-size: 10px; }
 .sparkline polyline { fill: none; stroke: #55b4ff; stroke-linecap: round; stroke-linejoin: round; stroke-width: 3; }

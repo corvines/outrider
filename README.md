@@ -10,7 +10,7 @@ Build or download the `outrider` binary, then install it for the current user:
 ./outrider install
 ```
 
-This installs `~/.local/bin/outrider` without administrator privileges. Add `~/.local/bin` to `PATH` if needed. Running `install` again upgrades an Outrider-owned installation; `outrider uninstall` removes it safely. To replace an older unmarked Outrider binary, run `./outrider install --replace-unmanaged` explicitly.
+This installs `~/.local/bin/outrider` without administrator privileges. Add `~/.local/bin` to `PATH` if needed. Running `install` again upgrades an Outrider-owned installation; `outrider uninstall` removes it safely, asking first whether to delete the state root (`~/Library/Caches/Outrider` by default, or `OUTRIDER_HOME`). Pass `--purge` or `--keep-state` to answer without a prompt. To replace an older unmarked Outrider binary, run `./outrider install --replace-unmanaged` explicitly.
 
 ## Run a model
 

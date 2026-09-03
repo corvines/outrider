@@ -28,7 +28,7 @@ app.innerHTML = `
         </section>
         <section class="grid">
           <article class="card card-wide"><div class="card-title">Active model</div><div id="model" class="card-value">—</div><div id="model-note" class="card-note">No model loaded</div></article>
-          <article class="card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><svg id="memory-chart" class="sparkline" viewBox="0 0 180 54" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="24" y1="8" x2="24" y2="42" /><line class="chart-axis" x1="24" y1="42" x2="176" y2="42" /><line class="chart-grid" x1="24" y1="8" x2="176" y2="8" /><polyline /><text class="chart-label" data-axis-high x="0" y="11">—</text><text class="chart-label" data-axis-low x="0" y="45">—</text><text class="chart-label" data-axis-old x="24" y="53">older</text><text class="chart-label" data-axis-now x="153" y="53">now</text></svg><div class="card-note">resident set</div></article>
+          <article class="card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><svg id="memory-chart" class="sparkline" viewBox="0 0 180 78" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="24" y1="8" x2="24" y2="60" /><line class="chart-axis" x1="24" y1="60" x2="176" y2="60" /><line class="chart-grid" x1="24" y1="8" x2="176" y2="8" /><polyline /><text class="chart-label" data-axis-high x="0" y="11">—</text><text class="chart-label" data-axis-low x="0" y="63">—</text><text class="chart-label" data-axis-old x="24" y="75">older</text><text class="chart-label" data-axis-now x="153" y="75">now</text></svg><div class="card-note">resident set</div></article>
           <article class="card"><div class="card-title">Context</div><div id="context" class="card-value">—</div><div class="card-note">loaded model window</div></article>
           <article class="card card-wide"><div class="card-title">Gateway</div><div class="metric"><span>Endpoint</span><span id="endpoint">—</span></div><div class="metric"><span>Last updated</span><span id="updated">—</span></div></article>
           <article class="card"><div class="card-title">Advertised models</div><div id="model-count" class="card-value">—</div><div class="card-note">available to clients</div></article>
@@ -43,7 +43,7 @@ app.innerHTML = `
       <div id="page-performance" class="page hidden">
         <div class="page-intro"><div class="eyebrow">Performance</div><p>Runtime signals from the resident model and gateway.</p></div>
         <section class="grid">
-          <article class="card card-wide"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><svg id="performance-chart" class="sparkline" viewBox="0 0 180 54" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="24" y1="8" x2="24" y2="42" /><line class="chart-axis" x1="24" y1="42" x2="176" y2="42" /><line class="chart-grid" x1="24" y1="8" x2="176" y2="8" /><polyline /><text class="chart-label" data-axis-high x="0" y="11">—</text><text class="chart-label" data-axis-low x="0" y="45">—</text><text class="chart-label" data-axis-old x="24" y="53">older</text><text class="chart-label" data-axis-now x="153" y="53">now</text></svg><div class="card-note">sampled while the dashboard is open</div></article>
+          <article class="card card-wide"><div class="card-title">Resident memory</div><div id="performance-memory" class="card-value">—</div><svg id="performance-chart" class="sparkline" viewBox="0 0 180 78" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="24" y1="8" x2="24" y2="60" /><line class="chart-axis" x1="24" y1="60" x2="176" y2="60" /><line class="chart-grid" x1="24" y1="8" x2="176" y2="8" /><polyline /><text class="chart-label" data-axis-high x="0" y="11">—</text><text class="chart-label" data-axis-low x="0" y="63">—</text><text class="chart-label" data-axis-old x="24" y="75">older</text><text class="chart-label" data-axis-now x="153" y="75">now</text></svg><div class="card-note">sampled while the dashboard is open</div></article>
           <article class="card"><div class="card-title">Context window</div><div id="performance-context" class="card-value">—</div><div class="card-note">active model window</div></article>
           <article class="card card-wide"><div class="card-title">Active model</div><div id="performance-model" class="card-value">—</div><div class="card-note">resident model</div></article>
           <article class="card"><div class="card-title">Gateway</div><div id="performance-endpoint" class="card-value">—</div><div id="performance-updated" class="card-note">—</div></article>
@@ -230,7 +230,7 @@ function renderMemoryChart(bytes: number) {
   const range = maximum - minimum || 1;
   const points = memorySamples.map((sample, index) => {
     const x = memorySamples.length === 1 ? 100 : 24 + (index / (memorySamples.length - 1)) * 152;
-    const y = 42 - ((sample - minimum) / range) * 34;
+    const y = 60 - ((sample - minimum) / range) * 52;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(" ");
   memoryChart.querySelector("polyline")?.setAttribute("points", points);

@@ -64,7 +64,7 @@ button { font: inherit; }
 .card-title { color: #7e8798; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
 .card-value { margin-top: 9px; color: #f1f3f8; font-size: 18px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-note { margin-top: 5px; color: #7f8999; font-size: 11px; }
-.sparkline { display: block; width: 100%; height: 72px; margin-top: 8px; overflow: visible; }
+.sparkline { display: block; width: 100%; height: 112px; margin-top: 8px; overflow: visible; }
 .chart-axis { stroke: #3a3f49; stroke-width: 1; }
 .chart-grid { stroke: #252a32; stroke-width: 1; stroke-dasharray: 2 3; }
 .chart-label { fill: #6f7888; font-size: 5px; font-family: Inter, -apple-system, BlinkMacSystemFont, sans-serif; }

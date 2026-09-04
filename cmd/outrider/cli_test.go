@@ -328,7 +328,7 @@ func TestListAndShowProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Profiles) != 10 {
+	if len(list.Profiles) != 9 {
 		t.Fatalf("profiles = %#v", list.Profiles)
 	}
 	if list.Profiles[0].Cache.State != "missing" {

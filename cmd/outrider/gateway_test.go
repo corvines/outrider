@@ -30,12 +30,12 @@ func TestGatewayModelsAdvertiseRunnableProfiles(t *testing.T) {
 	}
 	found := false
 	for _, model := range models {
-		if model.ID == "gemma4-26b" {
+		if model.ID == "qwen35b-mtp" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatal("gateway does not advertise gemma4-26b")
+		t.Fatal("gateway does not advertise qwen35b-mtp")
 	}
 }
 
@@ -118,12 +118,12 @@ func TestGatewayHTTPHandlerReturnsCurrentRunLogs(t *testing.T) {
 
 func TestGatewayHTTPHandlerReportsModelLoading(t *testing.T) {
 	backend := &gatewayBackend{}
-	backend.beginLoading("gemma4-26b")
+	backend.beginLoading("qwen35b-mtp")
 	backend.reportLoadingProgress(llama.DownloadProgress{
-		Name: "gemma4-26B_q4_0-it.gguf", Downloaded: 64, Total: 100,
+		Name: "qwen35b-mtp.gguf", Downloaded: 64, Total: 100,
 		BytesPerSecond: 20, ETA: 2 * time.Second,
 	})
-	gateway, err := switcher.New([]catalog.Entry{{ID: "gemma4-26b"}}, backend, nil)
+	gateway, err := switcher.New([]catalog.Entry{{ID: "qwen35b-mtp"}}, backend, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,13 +142,13 @@ func TestGatewayHTTPHandlerReportsModelLoading(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&status); err != nil {
 		t.Fatal(err)
 	}
-	if status.Loading == nil || status.Loading.Model != "gemma4-26b" {
+	if status.Loading == nil || status.Loading.Model != "qwen35b-mtp" {
 		t.Fatalf("loading = %+v", status.Loading)
 	}
 	if status.Loading.Phase != "downloading" || status.Loading.Downloaded != 64 || status.Loading.Total != 100 {
 		t.Fatalf("loading progress = %+v", status.Loading)
 	}
-	if status.Loading.Name != "gemma4-26B_q4_0-it.gguf" {
+	if status.Loading.Name != "qwen35b-mtp.gguf" {
 		t.Fatalf("loading name = %q", status.Loading.Name)
 	}
 }

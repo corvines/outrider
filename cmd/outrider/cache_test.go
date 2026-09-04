@@ -10,21 +10,21 @@ import (
 	"github.com/corvines/outrider/internal/manifest"
 )
 
-func TestCacheCleanProtectsGemmaResume(t *testing.T) {
+func TestCacheCleanProtectsProfileResume(t *testing.T) {
 	root := t.TempDir()
-	state, err := manifest.Paths(root, mustProfile(t, "gemma4-26b"), "")
+	state, err := manifest.Paths(root, mustProfile(t, "qwen35b-mtp"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(state.Root, "downloads"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	gemmaPart := state.Model + ".part"
-	gemmaResume := gemmaPart + ".resume.json"
+	profilePart := state.Model + ".part"
+	profileResume := profilePart + ".resume.json"
 	stalePart := filepath.Join(state.Models, "old-model.gguf.part")
 	staleCorrupt := filepath.Join(state.Models, "old-runtime.corrupt")
 	staleArchive := filepath.Join(state.Root, "downloads", "old.tar.gz.part")
-	for _, path := range []string{gemmaPart, gemmaResume, stalePart, staleCorrupt, staleArchive} {
+	for _, path := range []string{profilePart, profileResume, stalePart, staleCorrupt, staleArchive} {
 		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -55,7 +55,7 @@ func TestCacheCleanProtectsGemmaResume(t *testing.T) {
 	if applied.DryRun || len(applied.Removed) != 3 {
 		t.Fatalf("apply = %#v", applied)
 	}
-	for _, path := range []string{gemmaPart, gemmaResume} {
+	for _, path := range []string{profilePart, profileResume} {
 		if _, err := os.Stat(path); err != nil {
 			t.Fatalf("protected path %s: %v", path, err)
 		}

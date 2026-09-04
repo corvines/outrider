@@ -41,21 +41,27 @@ func parseCacheCleanArguments(arguments []string) (bool, error) {
 }
 
 func cleanCache(environment map[string]string, apply bool) (cacheCleanupOutput, error) {
-	gemma, err := manifest.Get("gemma4-26b")
+	root, err := manifest.StateRoot(environment["OUTRIDER_HOME"])
 	if err != nil {
 		return cacheCleanupOutput{}, err
 	}
-	state, err := manifest.Paths(environment["OUTRIDER_HOME"], gemma, "")
+	profiles, err := manifest.All()
 	if err != nil {
 		return cacheCleanupOutput{}, err
 	}
-	output := cacheCleanupOutput{Root: state.Root, DryRun: !apply}
-	protected := map[string]string{
-		filepath.Clean(state.Model + ".part"):             "protected Gemma partial",
-		filepath.Clean(state.Model + ".part.resume.json"): "protected Gemma resume metadata",
+	// A partial download is resumable, so every profile's keeps its own.
+	protected := map[string]string{}
+	for _, profile := range profiles {
+		paths, err := manifest.Paths(root, profile, "")
+		if err != nil {
+			return cacheCleanupOutput{}, err
+		}
+		protected[filepath.Clean(paths.Model+".part")] = "protected " + profile.ID + " partial"
+		protected[filepath.Clean(paths.Model+".part.resume.json")] = "protected " + profile.ID + " resume metadata"
 	}
-	for _, root := range []string{state.Models, filepath.Join(state.Root, "downloads")} {
-		if err := collectCacheCleanup(root, protected, &output); err != nil {
+	output := cacheCleanupOutput{Root: root, DryRun: !apply}
+	for _, dir := range []string{filepath.Join(root, "models"), filepath.Join(root, "downloads")} {
+		if err := collectCacheCleanup(dir, protected, &output); err != nil {
 			return cacheCleanupOutput{}, err
 		}
 	}

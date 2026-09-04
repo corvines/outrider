@@ -33,8 +33,8 @@ func TestDashboardServiceLoadModelPostsToGateway(t *testing.T) {
 	}))
 	defer server.Close()
 
-	snapshot := NewDashboardService(server.URL).LoadModel("gemma4-26b")
-	if loaded != "gemma4-26b" {
+	snapshot := NewDashboardService(server.URL).LoadModel("qwen35b-mtp")
+	if loaded != "qwen35b-mtp" {
 		t.Fatalf("loaded model = %q", loaded)
 	}
 	if snapshot.Error != "" {

@@ -19,7 +19,7 @@ func TestProfiles(t *testing.T) {
 		ids = append(ids, profile.ID)
 	}
 	if !reflect.DeepEqual(ids, []string{
-		"tiny", "qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-2b", "gemma4-26b",
+		"tiny", "qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-2b",
 	}) {
 		t.Fatalf("profile ids = %v", ids)
 	}
@@ -52,15 +52,6 @@ func TestProfiles(t *testing.T) {
 	}
 	if large.Persistence.Enabled {
 		t.Fatal("hybrid MTP profile enabled unsupported persistent KV")
-	}
-	gemma, err := Get("gemma4-26b")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !gemma.Runnable || gemma.Context.Size != 32768 || gemma.Context.Original != 262144 ||
-		gemma.Model.SHA256 != "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d" ||
-		gemma.Model.SizeBytes != 14439363584 {
-		t.Fatalf("unexpected Gemma profile: %#v", gemma)
 	}
 	if _, err := Get("missing"); err == nil {
 		t.Fatal("missing profile did not fail")

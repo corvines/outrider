@@ -56,7 +56,7 @@ Inspect interrupted downloads and quarantined cache files without changing anyth
 outrider cache clean
 ```
 
-Add `--apply` to remove the listed cleanup candidates. The active Gemma 4 26B partial and its resume metadata are always preserved.
+Add `--apply` to remove the listed cleanup candidates. A partial download and its resume metadata are preserved for every profile, so an interrupted `pull` can still be resumed.
 
 ## Desktop app
 

@@ -368,44 +368,5 @@
     "speculation": { "mode": "mtp", "tokens": 2, "minTokens": 0, "minProbability": 0 },
     "persistence": { "enabled": false },
     "admission": { "validatedPhysicalMemoryMiB": 8192 }
-  },
-  {
-    "id": "gemma4-26b",
-    "dev": true,
-    "runnable": true,
-    "description": "Gemma 4 26B-A4B official QAT Q4_0 local agent",
-    "model": {
-      "repo": "google/gemma-4-26B-A4B-it-qat-q4_0-gguf",
-      "file": "gemma-4-26B_q4_0-it.gguf",
-      "quant": "Q4_0",
-      "sha256": "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d",
-      "sizeBytes": 14439363584
-    },
-    "context": { "size": 32768, "original": 262144 },
-    "gpuLayers": "auto",
-    "fit": "on",
-    "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 1024, "microSize": 512, "parallel": 1 },
-    "memory": {
-      "mmap": true,
-      "mlock": false,
-      "cacheRamMiB": 0,
-      "contextCheckpoints": 0,
-      "checkpointMinStep": 8192
-    },
-    "jinja": true,
-    "systemPrompt": "You are a careful, helpful local assistant.",
-    "sampling": {
-      "temperature": 0.6,
-      "topP": 0.95,
-      "topK": 20,
-      "minP": 0.05,
-      "repeatPenalty": 1.0
-    },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": false },
-    "extraArgs": [],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
   }
 ]

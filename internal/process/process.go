@@ -225,6 +225,7 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		return Status{}, runnerError("runner start aborted", err)
 	}
 	health := true
+	noteTrainingContext(ctx, plan)
 	sessionResult := kvstate.Result{Action: "restore", Detail: "skipped"}
 	if !options.SkipSessionRestore {
 		var restoreErr error

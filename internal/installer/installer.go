@@ -18,10 +18,14 @@ const (
 	PackageID    = "com.corvines.outrider"
 )
 
+// Marker records what Outrider installed. A staged copy is identified by its
+// SHA-256; a symlink is identified by its destination. Exactly one of the two
+// is set.
 type Marker struct {
 	Schema int    `json:"schema"`
 	Target string `json:"target"`
-	SHA256 string `json:"sha256"`
+	SHA256 string `json:"sha256,omitempty"`
+	Link   string `json:"link,omitempty"`
 }
 
 func Stage(binary string, root string) (Marker, error) {
@@ -220,7 +224,9 @@ func readMarker(path string) (Marker, error) {
 	if err := decoder.Decode(&marker); err != nil {
 		return Marker{}, fmt.Errorf("decode Outrider ownership marker: %w", err)
 	}
-	if marker.Schema != MarkerSchema || marker.Target == "" || len(marker.SHA256) != 64 {
+	staged := len(marker.SHA256) == 64
+	linked := marker.Link != ""
+	if marker.Schema != MarkerSchema || marker.Target == "" || staged == linked {
 		return Marker{}, fmt.Errorf("invalid Outrider ownership marker at %s", path)
 	}
 	return marker, nil

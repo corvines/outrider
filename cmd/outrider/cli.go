@@ -31,7 +31,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider show <profile>
   outrider pull <profile>
   outrider cache clean [--apply]
-  outrider install [--replace-unmanaged]
+  outrider install [--link] [--replace-unmanaged]
   outrider uninstall [--purge | --keep-state]
   outrider version
   outrider start
@@ -200,7 +200,7 @@ func runWithOptions(
 		}
 		return formatOutput(output, options.Human)
 	case "install":
-		replaceUnmanaged, err := parseInstallArguments(argv[1:])
+		installOptions, err := parseInstallArguments(argv[1:])
 		if err != nil {
 			return "", err
 		}
@@ -212,9 +212,7 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		marker, err := installer.InstallUserWithOptions(source, environment["HOME"], installer.UserInstallOptions{
-			ReplaceUnmanaged: replaceUnmanaged,
-		})
+		marker, err := installer.InstallUserWithOptions(source, environment["HOME"], installOptions)
 		if err != nil {
 			return "", err
 		}
@@ -223,7 +221,8 @@ func runWithOptions(
 			return "", err
 		}
 		return formatOutput(installOutput{
-			Status: "installed", Target: layout.Target, Marker: layout.Marker, SHA256: marker.SHA256,
+			Status: "installed", Target: layout.Target, Marker: layout.Marker,
+			SHA256: marker.SHA256, Link: marker.Link,
 		}, options.Human)
 	case "uninstall":
 		choice, err := parseUninstallArguments(argv[1:])
@@ -490,17 +489,18 @@ func decideStateRemoval(
 	return answer, true, nil
 }
 
-func parseInstallArguments(arguments []string) (bool, error) {
+func parseInstallArguments(arguments []string) (installer.UserInstallOptions, error) {
 	flags := flag.NewFlagSet("install", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	replaceUnmanaged := flags.Bool("replace-unmanaged", false, "replace an existing unmarked Outrider binary")
+	link := flags.Bool("link", false, "symlink the install target at this binary instead of copying it")
 	if err := flags.Parse(arguments); err != nil {
-		return false, usageError(err.Error())
+		return installer.UserInstallOptions{}, usageError(err.Error())
 	}
 	if flags.NArg() != 0 {
-		return false, usageError("install accepts only --replace-unmanaged")
+		return installer.UserInstallOptions{}, usageError("install accepts only --link and --replace-unmanaged")
 	}
-	return *replaceUnmanaged, nil
+	return installer.UserInstallOptions{ReplaceUnmanaged: *replaceUnmanaged, Link: *link}, nil
 }
 
 func runInteractive(

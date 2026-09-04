@@ -19,6 +19,9 @@ type UserLayout struct {
 
 type UserInstallOptions struct {
 	ReplaceUnmanaged bool
+	// Link points the install target at the source binary instead of staging
+	// a copy of it, so the target tracks the source as it is rebuilt.
+	Link bool
 }
 
 func ResolveUserLayout(home string) (UserLayout, error) {
@@ -72,7 +75,9 @@ func InstallUserWithOptions(binary string, home string, options UserInstallOptio
 	if err != nil {
 		return Marker{}, err
 	}
-	if existing != nil {
+	// Reinstalling the same binary the same way is a no-op. A request that
+	// changes the kind of install always rewrites the target.
+	if existing != nil && (existing.Link != "") == options.Link {
 		targetInfo, statErr := os.Stat(layout.Target)
 		if statErr == nil && os.SameFile(info, targetInfo) {
 			return *existing, nil
@@ -81,17 +86,10 @@ func InstallUserWithOptions(binary string, home string, options UserInstallOptio
 	if err := os.MkdirAll(filepath.Dir(layout.Target), 0o755); err != nil {
 		return Marker{}, err
 	}
-	if err := copyExecutable(binary, layout.Target); err != nil {
-		return Marker{}, err
-	}
-	digest, err := fileSHA256(layout.Target)
+	marker, err := placeUserBinary(binary, layout, options.Link)
 	if err != nil {
-		if existing == nil {
-			_ = os.Remove(layout.Target)
-		}
 		return Marker{}, err
 	}
-	marker := Marker{Schema: MarkerSchema, Target: layout.Target, SHA256: digest}
 	if err := writeMarker(layout.Marker, marker); err != nil {
 		if existing == nil {
 			_ = os.Remove(layout.Target)
@@ -99,6 +97,42 @@ func InstallUserWithOptions(binary string, home string, options UserInstallOptio
 		return Marker{}, err
 	}
 	return marker, nil
+}
+
+func placeUserBinary(binary string, layout UserLayout, link bool) (Marker, error) {
+	if link {
+		if err := replaceWithSymlink(binary, layout.Target); err != nil {
+			return Marker{}, err
+		}
+		return Marker{Schema: MarkerSchema, Target: layout.Target, Link: binary}, nil
+	}
+	if err := copyExecutable(binary, layout.Target); err != nil {
+		return Marker{}, err
+	}
+	digest, err := fileSHA256(layout.Target)
+	if err != nil {
+		_ = os.Remove(layout.Target)
+		return Marker{}, err
+	}
+	return Marker{Schema: MarkerSchema, Target: layout.Target, SHA256: digest}, nil
+}
+
+// replaceWithSymlink swaps the target for a link atomically: a symlink is
+// created beside the target and renamed over it, so a failure part way through
+// leaves the previous install intact.
+func replaceWithSymlink(destination string, target string) error {
+	temporary := filepath.Join(filepath.Dir(target), ".outrider-link")
+	if err := os.Remove(temporary); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.Symlink(destination, temporary); err != nil {
+		return err
+	}
+	if err := os.Rename(temporary, target); err != nil {
+		_ = os.Remove(temporary)
+		return err
+	}
+	return nil
 }
 
 func VerifyUser(home string) (Marker, error) {
@@ -162,6 +196,19 @@ func verifyOwnedUserInstall(layout UserLayout) (*Marker, error) {
 	}
 	if marker.Target != layout.Target {
 		return nil, fmt.Errorf("ownership marker targets %s, expected %s", marker.Target, layout.Target)
+	}
+	if marker.Link != "" {
+		destination, err := os.Readlink(layout.Target)
+		if err != nil {
+			return nil, fmt.Errorf("refusing to replace %s: it is no longer a symlink: %w", layout.Target, err)
+		}
+		if destination != marker.Link {
+			return nil, fmt.Errorf(
+				"refusing to replace %s: it points at %s, ownership marker requires %s",
+				layout.Target, destination, marker.Link,
+			)
+		}
+		return &marker, nil
 	}
 	digest, err := fileSHA256(layout.Target)
 	if err != nil {

@@ -67,3 +67,80 @@ func TestUserInstallRefusesUnownedOrModifiedTarget(t *testing.T) {
 		t.Fatalf("modified managed target was replaced: %v", err)
 	}
 }
+
+func TestInstallUserLinksInsteadOfCopying(t *testing.T) {
+	home := t.TempDir()
+	binary := testBinary(t, "linked")
+	marker, err := InstallUserWithOptions(binary, home, UserInstallOptions{Link: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker.Link != binary || marker.SHA256 != "" {
+		t.Fatalf("marker = %#v", marker)
+	}
+	layout, err := ResolveUserLayout(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination, err := os.Readlink(layout.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if destination != binary {
+		t.Fatalf("target points at %s, want %s", destination, binary)
+	}
+	verified, err := VerifyUser(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified != marker {
+		t.Fatalf("verified = %#v", verified)
+	}
+	if err := UninstallUser(home); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(layout.Target); !os.IsNotExist(err) {
+		t.Fatalf("link remains: %v", err)
+	}
+}
+
+func TestInstallUserRefusesARedirectedLink(t *testing.T) {
+	home := t.TempDir()
+	if _, err := InstallUserWithOptions(testBinary(t, "linked"), home, UserInstallOptions{Link: true}); err != nil {
+		t.Fatal(err)
+	}
+	layout, _ := ResolveUserLayout(home)
+	if err := os.Remove(layout.Target); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(testBinary(t, "other"), layout.Target); err != nil {
+		t.Fatal(err)
+	}
+	_, err := InstallUserWithOptions(testBinary(t, "linked"), home, UserInstallOptions{Link: true})
+	if err == nil || !strings.Contains(err.Error(), "refusing to replace") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func TestInstallUserReplacesALinkWithACopy(t *testing.T) {
+	home := t.TempDir()
+	binary := testBinary(t, "same")
+	if _, err := InstallUserWithOptions(binary, home, UserInstallOptions{Link: true}); err != nil {
+		t.Fatal(err)
+	}
+	marker, err := InstallUserWithOptions(binary, home, UserInstallOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if marker.Link != "" || len(marker.SHA256) != 64 {
+		t.Fatalf("marker = %#v", marker)
+	}
+	layout, _ := ResolveUserLayout(home)
+	info, err := os.Lstat(layout.Target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal("target is still a symlink")
+	}
+}

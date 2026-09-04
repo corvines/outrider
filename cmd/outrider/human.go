@@ -38,6 +38,12 @@ func humanOutput(value any) (string, error) {
 		if output.Status == "uninstalled" {
 			return humanUninstall(output), nil
 		}
+		if output.Link != "" {
+			return fmt.Sprintf(
+				"Linked Outrider at %s to %s\nAdd %s to PATH if needed.\n",
+				output.Target, output.Link, filepath.Dir(output.Target),
+			), nil
+		}
 		return fmt.Sprintf(
 			"Installed Outrider at %s\nAdd %s to PATH if needed.\n",
 			output.Target, filepath.Dir(output.Target),

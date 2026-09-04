@@ -84,6 +84,7 @@ type installOutput struct {
 	Target        string `json:"target"`
 	Marker        string `json:"marker,omitempty"`
 	SHA256        string `json:"sha256,omitempty"`
+	Link          string `json:"link,omitempty"`
 	StateRoot     string `json:"stateRoot,omitempty"`
 	StateBytes    int64  `json:"stateBytes,omitempty"`
 	StateRemoved  bool   `json:"stateRemoved,omitempty"`

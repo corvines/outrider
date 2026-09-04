@@ -49,7 +49,7 @@ route: a caller never has to shell out to the binary to learn any of this.
       "object": "model",
       "owned_by": "outrider",
       "description": "Qwen3.6 35B-A3B MTP primary local agent",
-      "capabilities": ["completion", "speculation"],
+      "capabilities": ["completion", "vision", "speculation"],
       "quantization": "UD-Q4_K_M",
       "meta": { "n_ctx": 32768, "n_ctx_train": 131072 },
       "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
@@ -161,7 +161,7 @@ the running backend reports back.
   "id": "qwen35b-mtp",
   "object": "model",
   "owned_by": "outrider",
-  "capabilities": ["completion", "speculation"],
+  "capabilities": ["completion", "vision", "speculation"],
   "meta": { "n_ctx": 32768, "n_ctx_train": 262144 },
   "requested": {
     "n_ctx": 32768,
@@ -187,7 +187,7 @@ the running backend reports back.
     "quantization": "Q4_K - Medium",
     "model_path": "/Users/x/.cache/outrider/models/...gguf",
     "n_slots": 1,
-    "modalities": { "vision": false, "audio": false, "video": false },
+    "modalities": { "vision": true, "audio": false, "video": true },
     "supports_tools": true,
     "samplers": ["penalties", "dry", "top_k", "top_p", "min_p", "temperature"],
     "sampling": { "temperature": 0.6, "top_p": 0.95, "top_k": 20,
@@ -218,9 +218,15 @@ different from either.
 ### What resolved does not carry
 
 The backend does not report back how many layers were offloaded, whether flash
-attention engaged, or which KV cache types are in force. Those appear under
-`requested` only. Treating a requested value as a measurement is the mistake
-this split exists to prevent.
+attention engaged, which KV cache types are in force, or whether a draft path
+is running. Those appear under `requested` only. Treating a requested value as
+a measurement is the mistake this split exists to prevent.
+
+Speculation is the sharp case. `/props` carries a `speculative.types` field,
+and it reads `"none"` on a process that is demonstrably running MTP, because
+that field describes a separate draft model and MTP's draft path lives inside
+the target model. Reporting it would have said speculation was off while the
+server log recorded draft acceptance. So it is not reported at all.
 
 ### resolved is a lookup, never a load
 

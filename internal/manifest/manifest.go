@@ -175,15 +175,15 @@ type Profile struct {
 }
 
 type StatePaths struct {
-	Root         string `json:"root"`
-	Models       string `json:"models"`
-	Model        string `json:"model"`
-	Run          string `json:"run"`
-	PID          string `json:"pid"`
-	Lock         string `json:"lock"`
-	Log          string `json:"log"`
-	Executable   string `json:"executable"`
-	Slots        string `json:"slots"`
+	Root       string `json:"root"`
+	Models     string `json:"models"`
+	Model      string `json:"model"`
+	Run        string `json:"run"`
+	PID        string `json:"pid"`
+	Lock       string `json:"lock"`
+	Log        string `json:"log"`
+	Executable string `json:"executable"`
+	Slots      string `json:"slots"`
 }
 
 type SessionState struct {

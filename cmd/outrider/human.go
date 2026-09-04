@@ -120,9 +120,9 @@ func humanProfileList(output profileListOutput) string {
 	}
 	if len(output.DevelopmentModels) > 0 {
 		_, _ = fmt.Fprintln(writer)
-		_, _ = fmt.Fprintln(writer, "LOCAL OLLAMA MODEL\tSIZE\tSOURCE")
+		_, _ = fmt.Fprintln(writer, "LOCAL GGUF MODEL\tSIZE\tSOURCE")
 		for _, model := range output.DevelopmentModels {
-			_, _ = fmt.Fprintf(writer, "%s\t%s\tOllama cache\n", model.Name, formatByteCount(model.SizeBytes))
+			_, _ = fmt.Fprintf(writer, "%s\t%s\tlocal cache\n", model.Name, formatByteCount(model.SizeBytes))
 		}
 	}
 	_ = writer.Flush()

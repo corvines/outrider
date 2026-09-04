@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -348,6 +349,32 @@ func TestListAndShowProfiles(t *testing.T) {
 	}
 	if detail.Profile.ID != "qwen35b-mtp" || !detail.Profile.Runnable || detail.Profile.Speculation.Mode != "mtp" {
 		t.Fatalf("profile detail = %#v", detail)
+	}
+}
+
+func TestListWithoutDevelopmentEnabled(t *testing.T) {
+	root := t.TempDir()
+	cacheRoot := t.TempDir()
+	writeOllamaFixture(t, cacheRoot)
+	listJSON, err := run(context.Background(), []string{"ls"}, map[string]string{
+		"OUTRIDER_HOME": root, "OLLAMA_MODELS": cacheRoot,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list profileListOutput
+	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
+		t.Fatal(err)
+	}
+	if len(list.DevelopmentModels) != 0 {
+		t.Fatalf("development models = %#v", list.DevelopmentModels)
+	}
+	ids := make([]string, 0, len(list.Profiles))
+	for _, profile := range list.Profiles {
+		ids = append(ids, profile.ID)
+	}
+	if !reflect.DeepEqual(ids, []string{"qwen35b-mtp", "qwen35-2b"}) {
+		t.Fatalf("offered profiles = %v", ids)
 	}
 }
 

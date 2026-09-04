@@ -151,13 +151,16 @@ func runWithOptions(
 			}
 			output.Profiles = append(output.Profiles, summary)
 		}
-		ollamaRoot, err := ollamacache.DefaultRoot(environment["HOME"], environment["OLLAMA_MODELS"])
-		if err != nil {
-			return "", err
-		}
-		output.DevelopmentModels, err = ollamacache.Discover(ollamaRoot)
-		if err != nil {
-			return "", err
+		if manifest.DevEnabled() {
+			cacheRoot, rootErr := ollamacache.DefaultRoot(environment["HOME"], environment["OLLAMA_MODELS"])
+			if rootErr != nil {
+				return "", rootErr
+			}
+			discovered, discoverErr := ollamacache.Discover(cacheRoot)
+			if discoverErr != nil {
+				return "", discoverErr
+			}
+			output.DevelopmentModels = discovered
 		}
 		return formatOutput(output, options.Human)
 	case "show":
@@ -611,7 +614,7 @@ func developmentProfile(model ollamacache.Model) (manifest.Profile, error) {
 		return manifest.Profile{}, err
 	}
 	profile.ID = model.Name
-	profile.Description = "Development model from the local Ollama cache"
+	profile.Description = "Development model from the local GGUF cache"
 	profile.Persistence.Enabled = false
 	profile.Model = manifest.Artifact{
 		LocalPath: model.Path, SHA256: strings.TrimPrefix(model.Digest, "sha256:"), SizeBytes: model.SizeBytes,

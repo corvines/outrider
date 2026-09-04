@@ -296,11 +296,10 @@ func runWithOptions(
 		if err != nil {
 			return "", err
 		}
-		status, err := runnerprocess.GetStatus(ctx, plan)
+		portOwned, err := outriderOwnsPort(ctx, plan, environment)
 		if err != nil {
 			return "", err
 		}
-		portOwned := status.Kind == runnerprocess.StatusRunning
 		report := admission.Inspect(ctx, profile, plan, portOwned)
 		return formatOutput(admission.WithRuntimeCapabilities(ctx, report, plan, false), options.Human)
 	case "verify":
@@ -1021,4 +1020,38 @@ func runnerErrorf(format string, args ...any) error {
 
 func elapsedMilliseconds(start time.Time) float64 {
 	return float64(time.Since(start).Microseconds()) / 1000
+}
+
+// outriderOwnsPort reports whether the port the plan wants is already held by
+// an Outrider process. The gateway listens on the front port and the model
+// backend on the next one, so both records are consulted.
+func outriderOwnsPort(ctx context.Context, plan manifest.Plan, environment map[string]string) (bool, error) {
+	model, err := runnerprocess.GetStatus(ctx, plan)
+	if err != nil {
+		return false, err
+	}
+	if model.Kind == runnerprocess.StatusRunning {
+		return true, nil
+	}
+	gatewayPlan, err := gatewayProcessPlan(environment)
+	if err != nil {
+		return false, err
+	}
+	if gatewayPlan.Port != plan.Port {
+		return false, nil
+	}
+	gateway, err := runnerprocess.GetStatus(ctx, gatewayPlan)
+	if err != nil {
+		return false, err
+	}
+	return ownsPort(plan.Port, model, gatewayPlan.Port, gateway), nil
+}
+
+// ownsPort decides whether either Outrider record holds the wanted port. The
+// gateway record covers the front port, which is the one a profile plan names.
+func ownsPort(wanted int, model runnerprocess.Status, gatewayPort int, gateway runnerprocess.Status) bool {
+	if model.Kind == runnerprocess.StatusRunning {
+		return true
+	}
+	return gatewayPort == wanted && gateway.Kind == runnerprocess.StatusRunning
 }

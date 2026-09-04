@@ -12,6 +12,7 @@ import (
 
 	"github.com/corvines/outrider/internal/manifest"
 	"github.com/corvines/outrider/internal/ollamacache"
+	runnerprocess "github.com/corvines/outrider/internal/process"
 )
 
 func TestPlanPreservesWireShape(t *testing.T) {
@@ -554,5 +555,33 @@ func TestServingADevelopmentProfileIsRefusedWithoutTheSwitch(t *testing.T) {
 	t.Setenv("OUTRIDER_DEV", "1")
 	if _, err := runnableProfile("tiny"); err != nil {
 		t.Errorf("development profile refused with the switch on: %v", err)
+	}
+}
+
+// The gateway listens on the front port, which is the port a profile plan
+// names, so a running gateway means the port is not free but is not a conflict
+// either.
+func TestPortOwnershipCountsTheRunningGateway(t *testing.T) {
+	running := runnerprocess.Status{Kind: runnerprocess.StatusRunning}
+	stopped := runnerprocess.Status{Kind: runnerprocess.StatusStopped}
+	cases := []struct {
+		name        string
+		model       runnerprocess.Status
+		gatewayPort int
+		gateway     runnerprocess.Status
+		want        bool
+	}{
+		{"gateway holds the same port", stopped, 11435, running, true},
+		{"gateway stopped", stopped, 11435, stopped, false},
+		{"gateway on another port", stopped, 21435, running, false},
+		{"model runner holds it", running, 21435, stopped, true},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			got := ownsPort(11435, testCase.model, testCase.gatewayPort, testCase.gateway)
+			if got != testCase.want {
+				t.Fatalf("ownsPort = %t, want %t", got, testCase.want)
+			}
+		})
 	}
 }

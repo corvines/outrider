@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -62,6 +63,34 @@ func TestStartIsIdempotentAndStopsServer(t *testing.T) {
 	}
 	if status.Kind != StatusStopped {
 		t.Fatalf("final status = %#v", status)
+	}
+}
+
+func TestChildKeepsWritingAfterParentClosesInheritedLog(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "child.log")
+	command := exec.Command("sh", "-c", "sleep 0.2; echo still-alive >&2")
+	file, err := inheritLogFile(command, logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := command.Stdout.(*os.File); !ok {
+		t.Fatalf("stdout type %T, want *os.File so the child keeps the log after the launcher exits", command.Stdout)
+	}
+	if err := command.Start(); err != nil {
+		t.Fatal(err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := command.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "still-alive") {
+		t.Fatalf("log = %q", data)
 	}
 }
 

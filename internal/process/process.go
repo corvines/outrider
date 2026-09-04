@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -121,16 +122,14 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	if err := os.MkdirAll(plan.State.Slots, 0o700); err != nil {
 		return Status{}, runnerError("could not create slot cache directory", err)
 	}
-	logFile, err := openRotatingLog(plan.State.Log, serverLogMaxBytes)
-	if err != nil {
-		return Status{}, runnerError("could not open server log", err)
-	}
 	command := exec.Command(plan.Executable, plan.Args...)
 	command.Dir = options.CWD
 	command.Stdin = nil
-	command.Stdout = logFile
-	command.Stderr = logFile
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	logFile, err := inheritLogFile(command, plan.State.Log)
+	if err != nil {
+		return Status{}, runnerError("could not open server log", err)
+	}
 	launchStartedAt := time.Now()
 	if err := command.Start(); err != nil {
 		logFile.Close()
@@ -544,4 +543,17 @@ func planMismatchError(record ProcessRecord, plan manifest.Plan) error {
 		"running PID %d does not match the requested %s plan; run outrider down before starting the new plan",
 		record.PID, plan.Profile.ID,
 	)
+}
+
+func inheritLogFile(command *exec.Cmd, path string) (*os.File, error) {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	command.Stdout = file
+	command.Stderr = file
+	return file, nil
 }

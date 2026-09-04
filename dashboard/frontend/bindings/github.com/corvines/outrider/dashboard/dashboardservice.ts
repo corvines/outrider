@@ -29,6 +29,10 @@ export function PauseModel(): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(446540258);
 }
 
+export function RevealModel(modelID: string): $CancellablePromise<$models.DashboardSnapshot> {
+    return $Call.ByID(1156740125, modelID);
+}
+
 export function Snapshot(): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(217719277);
 }

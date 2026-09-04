@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,7 +22,12 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	arguments, jsonOutput := outputArguments(os.Args[1:])
-	options := runOptions{Human: !jsonOutput}
+	if !jsonOutput {
+		if info, err := os.Stdout.Stat(); err == nil && info.Mode()&os.ModeCharDevice == 0 {
+			jsonOutput = true
+		}
+	}
+	options := runOptions{Human: !jsonOutput, Progress: emitJSONProgress}
 	if terminal, err := os.Stderr.Stat(); err == nil && terminal.Mode()&os.ModeCharDevice != 0 {
 		options.Progress = renderDownloadProgress
 		if !jsonOutput {
@@ -68,6 +74,34 @@ func outputArguments(arguments []string) ([]string, bool) {
 		filtered = append(filtered, argument)
 	}
 	return filtered, jsonOutput
+}
+
+type machineProgress struct {
+	Name           string  `json:"name"`
+	Downloaded     int64   `json:"downloaded,omitempty"`
+	Total          int64   `json:"total,omitempty"`
+	BytesPerSecond float64 `json:"bytes_per_second,omitempty"`
+	ETASeconds     int64   `json:"eta_seconds,omitempty"`
+	Done           bool    `json:"done"`
+}
+
+func encodeMachineProgress(progress llama.DownloadProgress) ([]byte, error) {
+	return json.Marshal(machineProgress{
+		Name:           progress.Name,
+		Downloaded:     progress.Downloaded,
+		Total:          progress.Total,
+		BytesPerSecond: progress.BytesPerSecond,
+		ETASeconds:     int64(progress.ETA / time.Second),
+		Done:           progress.Done,
+	})
+}
+
+func emitJSONProgress(progress llama.DownloadProgress) {
+	payload, err := encodeMachineProgress(progress)
+	if err != nil {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "%s\n", payload)
 }
 
 func renderDownloadProgress(progress llama.DownloadProgress) {

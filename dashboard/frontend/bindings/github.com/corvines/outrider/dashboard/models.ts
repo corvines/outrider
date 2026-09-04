@@ -11,6 +11,7 @@ export interface AdvertisedModel {
     "canDelete": boolean;
     "protected"?: boolean;
     "custom"?: boolean;
+    "path"?: string;
 }
 
 export interface DashboardSnapshot {

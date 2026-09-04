@@ -6,13 +6,33 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
 	"time"
 )
+
+var revealInFinder = func(path string) error {
+	output, err := exec.Command("open", "-R", path).CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return fmt.Errorf("show in Finder: %w", err)
+		}
+		return fmt.Errorf("show in Finder: %s", message)
+	}
+	_ = exec.Command("osascript", "-e", `tell application "Finder" to activate`).Run()
+	return nil
+}
 
 type DashboardService struct {
 	endpoint      string
 	client        *http.Client
 	controlClient *http.Client
+	mu            sync.Mutex
+	lastCatalog   []AdvertisedModel
 }
 
 type DashboardSnapshot struct {
@@ -56,6 +76,7 @@ type AdvertisedModel struct {
 	CanDelete       bool   `json:"canDelete"`
 	Protected       bool   `json:"protected,omitempty"`
 	Custom          bool   `json:"custom,omitempty"`
+	Path            string `json:"path,omitempty"`
 }
 
 type statusResponse struct {
@@ -100,11 +121,11 @@ func (service *DashboardService) Snapshot() DashboardSnapshot {
 		// making it explicit that controls require a current gateway.
 		if catalogErr := service.populateCatalog(&snapshot); catalogErr != nil {
 			snapshot.Error = err.Error()
-			return snapshot
+			return service.withCatalog(snapshot)
 		}
 		snapshot.GatewayHealth = "legacy"
 		snapshot.UpdatedAt = time.Now().UTC()
-		return snapshot
+		return service.withCatalog(snapshot)
 	}
 	snapshot.GatewayEndpoint = status.GatewayEndpoint
 	snapshot.GatewayHealth = status.GatewayHealth
@@ -121,7 +142,7 @@ func (service *DashboardService) Snapshot() DashboardSnapshot {
 	} else {
 		_ = service.populateCatalog(&snapshot)
 	}
-	return snapshot
+	return service.withCatalog(snapshot)
 }
 
 func (service *DashboardService) populateCatalog(snapshot *DashboardSnapshot) error {
@@ -140,57 +161,80 @@ func (service *DashboardService) populateCatalog(snapshot *DashboardSnapshot) er
 }
 
 func (service *DashboardService) LoadModel(modelID string) DashboardSnapshot {
-	if err := service.postJSON("/admin/model", map[string]string{"model": modelID}); err != nil {
-		snapshot := service.offlineSnapshot()
-		snapshot.Error = err.Error()
-		return snapshot
-	}
-	return service.Snapshot()
+	return service.finishControl(service.postJSON("/admin/model", map[string]string{"model": modelID}))
 }
 
 func (service *DashboardService) DownloadModel(modelID string) DashboardSnapshot {
-	if err := service.postJSON("/admin/download", map[string]string{"model": modelID}); err != nil {
-		snapshot := service.offlineSnapshot()
-		snapshot.Error = err.Error()
-		return snapshot
-	}
-	return service.Snapshot()
+	return service.finishControl(service.postJSON("/admin/download", map[string]string{"model": modelID}))
 }
 
 func (service *DashboardService) DownloadPath(path string) DashboardSnapshot {
-	if err := service.postJSON("/admin/download-path", map[string]string{"path": path}); err != nil {
-		snapshot := service.offlineSnapshot()
-		snapshot.Error = err.Error()
-		return snapshot
-	}
-	return service.Snapshot()
+	return service.finishControl(service.postJSON("/admin/download-path", map[string]string{"path": path}))
 }
 
 func (service *DashboardService) DeleteModel(modelID string) DashboardSnapshot {
-	if err := service.postJSON("/admin/delete", map[string]string{"model": modelID}); err != nil {
-		snapshot := service.offlineSnapshot()
-		snapshot.Error = err.Error()
+	return service.finishControl(service.postJSON("/admin/delete", map[string]string{"model": modelID}))
+}
+
+func (service *DashboardService) RevealModel(modelID string) DashboardSnapshot {
+	snapshot := service.Snapshot()
+	path := ""
+	for _, model := range snapshot.Models {
+		if model.ID == modelID {
+			path = model.Path
+			break
+		}
+	}
+	if path == "" {
+		snapshot.Error = fmt.Sprintf("model %s is not downloaded", modelID)
 		return snapshot
 	}
-	return service.Snapshot()
+	if err := revealCachedPath(path); err != nil {
+		snapshot.Error = err.Error()
+	}
+	return snapshot
+}
+
+func revealCachedPath(path string) error {
+	modelPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Lstat(modelPath); os.IsNotExist(err) {
+		return fmt.Errorf("model file is not on disk")
+	} else if err != nil {
+		return err
+	}
+	return revealInFinder(modelPath)
 }
 
 func (service *DashboardService) StopModel() DashboardSnapshot {
-	if err := service.postJSON("/admin/stop", nil); err != nil {
-		snapshot := service.offlineSnapshot()
-		snapshot.Error = err.Error()
-		return snapshot
-	}
-	return service.Snapshot()
+	return service.finishControl(service.postJSON("/admin/stop", nil))
 }
 
 func (service *DashboardService) PauseModel() DashboardSnapshot {
-	if err := service.postJSON("/admin/pause", nil); err != nil {
-		snapshot := service.offlineSnapshot()
+	return service.finishControl(service.postJSON("/admin/pause", nil))
+}
+
+func (service *DashboardService) finishControl(err error) DashboardSnapshot {
+	snapshot := service.Snapshot()
+	if err != nil {
 		snapshot.Error = err.Error()
+	}
+	return snapshot
+}
+
+func (service *DashboardService) withCatalog(snapshot DashboardSnapshot) DashboardSnapshot {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	if len(snapshot.Models) > 0 {
+		service.lastCatalog = append([]AdvertisedModel(nil), snapshot.Models...)
 		return snapshot
 	}
-	return service.Snapshot()
+	if len(service.lastCatalog) > 0 {
+		snapshot.Models = append([]AdvertisedModel(nil), service.lastCatalog...)
+	}
+	return snapshot
 }
 
 func (service *DashboardService) offlineSnapshot() DashboardSnapshot {
@@ -234,6 +278,12 @@ func (service *DashboardService) postJSON(path string, payload any) error {
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
 		if len(message) > 0 {
+			var payload struct {
+				Error string `json:"error"`
+			}
+			if json.Unmarshal(message, &payload) == nil && payload.Error != "" {
+				return fmt.Errorf("%s", payload.Error)
+			}
 			return fmt.Errorf("Outrider returned HTTP %d: %s", response.StatusCode, string(message))
 		}
 		return fmt.Errorf("Outrider returned HTTP %d", response.StatusCode)

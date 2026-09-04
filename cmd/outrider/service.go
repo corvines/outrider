@@ -1,11 +1,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
+	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 )
@@ -49,6 +56,21 @@ func startGateway(ctx context.Context, environment map[string]string) (runnerpro
 	return runnerprocess.Start(ctx, plan, runnerprocess.StartOptions{})
 }
 
+func serveProfile(
+	ctx context.Context,
+	profileID string,
+	environment map[string]string,
+	options runOptions,
+) (useOutput, error) {
+	if _, err := runnableProfile(profileID); err != nil {
+		return useOutput{}, err
+	}
+	if _, err := startGateway(ctx, environment); err != nil {
+		return useOutput{}, err
+	}
+	return useGatewayModel(ctx, profileID, environment, options)
+}
+
 func getServiceStatus(ctx context.Context, environment map[string]string) (serviceStatusOutput, error) {
 	gatewayPlan, err := gatewayProcessPlan(environment)
 	if err != nil {
@@ -90,15 +112,8 @@ func useGatewayModel(
 	if gatewayStatus.Kind != runnerprocess.StatusRunning || gatewayStatus.Health == nil || !*gatewayStatus.Health {
 		return useOutput{}, runnerErrorf("Outrider gateway is not healthy; run `outrider start` first")
 	}
-	_, backendPort, err := gatewayPorts(environment)
-	if err != nil {
-		return useOutput{}, err
-	}
-	backendEnvironment := cloneEnvironment(environment)
-	backendEnvironment["OUTRIDER_PORT"] = fmt.Sprintf("%d", backendPort)
-	backend := gatewayBackend{environment: backendEnvironment, options: options}
 	options.notice("Switching to %s...", profileID)
-	if _, err := backend.Ensure(ctx, profileID); err != nil {
+	if err := switchGatewayModel(ctx, gatewayPlan.Endpoint, profileID, options); err != nil {
 		return useOutput{}, err
 	}
 	state, err := activeState(environment)
@@ -110,6 +125,100 @@ func useGatewayModel(
 		return useOutput{}, err
 	}
 	return useOutput{Profile: profileID, Endpoint: gatewayPlan.Endpoint, Model: model}, nil
+}
+
+func switchGatewayModel(ctx context.Context, endpoint string, profileID string, options runOptions) error {
+	done := make(chan struct{})
+	go pollGatewayLoading(ctx, endpoint, options, done)
+	err := postGatewayJSON(ctx, endpoint+"/admin/model", map[string]string{"model": profileID})
+	close(done)
+	return err
+}
+
+func pollGatewayLoading(ctx context.Context, endpoint string, options runOptions, done <-chan struct{}) {
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			var status gatewayDashboardStatus
+			if err := getGatewayJSON(ctx, endpoint+"/admin/status", &status); err != nil || status.Loading == nil {
+				continue
+			}
+			if options.Progress == nil {
+				continue
+			}
+			name := status.Loading.Name
+			if name == "" {
+				name = status.Loading.Model
+			}
+			options.Progress(llama.DownloadProgress{
+				Name:           name,
+				Downloaded:     status.Loading.Downloaded,
+				Total:          status.Loading.Total,
+				BytesPerSecond: status.Loading.BytesPerSecond,
+				ETA:            time.Duration(status.Loading.ETASeconds) * time.Second,
+			})
+		}
+	}
+}
+
+func getGatewayJSON(ctx context.Context, url string, target any) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	response, err := (&http.Client{Timeout: 2 * time.Second}).Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("Outrider returned HTTP %d", response.StatusCode)
+	}
+	return json.NewDecoder(response.Body).Decode(target)
+}
+
+func postGatewayJSON(ctx context.Context, url string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := (&http.Client{Timeout: 30 * time.Minute}).Do(request)
+	if err != nil {
+		if ctx.Err() != nil {
+			return runnerErrorf("Outrider stopped")
+		}
+		message := err.Error()
+		if strings.Contains(message, "EOF") || strings.Contains(message, "connection refused") {
+			return runnerErrorf("Outrider stopped")
+		}
+		return fmt.Errorf("Outrider gateway closed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+		var payload struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(message, &payload) == nil && payload.Error != "" {
+			return fmt.Errorf("%s", payload.Error)
+		}
+		if len(message) > 0 {
+			return fmt.Errorf("Outrider returned HTTP %d: %s", response.StatusCode, string(message))
+		}
+		return fmt.Errorf("Outrider returned HTTP %d", response.StatusCode)
+	}
+	return nil
 }
 
 func stopServices(ctx context.Context, environment map[string]string) (serviceStatusOutput, error) {

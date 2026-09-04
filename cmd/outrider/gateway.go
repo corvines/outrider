@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -47,12 +48,13 @@ type gatewayModelStatus struct {
 	CanDelete       bool   `json:"canDelete"`
 	Protected       bool   `json:"protected,omitempty"`
 	Custom          bool   `json:"custom,omitempty"`
+	Path            string `json:"path,omitempty"`
 }
 
 var protectedGatewayModels = map[string]struct{}{
-	"tiny":        {},
-	"qwen3-1.7b":  {},
-	"qwen35b-mtp": {},
+	"qwen3-1.7b":    {},
+	"granite4.2-3b": {},
+	"qwen35b-mtp":   {},
 }
 
 type gatewayLoadingStatus struct {
@@ -63,6 +65,7 @@ type gatewayLoadingStatus struct {
 	Total          int64     `json:"total,omitempty"`
 	BytesPerSecond float64   `json:"bytesPerSecond,omitempty"`
 	ETASeconds     int64     `json:"etaSeconds,omitempty"`
+	Name           string    `json:"name,omitempty"`
 	Error          string    `json:"error,omitempty"`
 }
 
@@ -204,6 +207,7 @@ func (backend *gatewayBackend) reportLoadingProgress(progress llama.DownloadProg
 	if backend.paused {
 		return
 	}
+	backend.loading.Name = progress.Name
 	if strings.HasPrefix(progress.Name, "verify ") {
 		backend.loading.Phase = "verifying"
 	} else {
@@ -422,10 +426,6 @@ func gatewayHTTPHandler(gateway *switcher.Server, backend switcher.Backend, envi
 			return
 		}
 		modelID := strings.TrimSpace(payload.Model)
-		if _, protected := protectedGatewayModels[modelID]; protected {
-			writeGatewayJSON(writer, http.StatusForbidden, map[string]string{"error": fmt.Sprintf("model %s is protected and cannot be deleted", modelID)})
-			return
-		}
 		active, err := runnerprocess.GetActiveStatus(request.Context(), state)
 		if err != nil {
 			writeGatewayJSON(writer, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -443,6 +443,20 @@ func gatewayHTTPHandler(gateway *switcher.Server, backend switcher.Backend, envi
 		}
 		if deleteErr != nil {
 			writeGatewayJSON(writer, http.StatusBadRequest, map[string]string{"error": deleteErr.Error()})
+			return
+		}
+		writeGatewayStatus(writer, request, state, frontPort, backend)
+	})
+	mux.HandleFunc("POST /admin/reveal", func(writer http.ResponseWriter, request *http.Request) {
+		var payload struct {
+			Model string `json:"model"`
+		}
+		if err := decodeGatewayJSON(request, &payload); err != nil || strings.TrimSpace(payload.Model) == "" {
+			writeGatewayJSON(writer, http.StatusBadRequest, map[string]string{"error": "request must name a model"})
+			return
+		}
+		if err := revealCachedModel(state.Root, strings.TrimSpace(payload.Model)); err != nil {
+			writeGatewayJSON(writer, http.StatusBadRequest, map[string]string{"error": err.Error()})
 			return
 		}
 		writeGatewayStatus(writer, request, state, frontPort, backend)
@@ -558,10 +572,15 @@ func gatewayCatalog(root string) ([]gatewayModelStatus, error) {
 			return nil, err
 		}
 		_, protected := protectedGatewayModels[profile.ID]
+		onDisk := cache.State != "missing"
+		path := ""
+		if onDisk {
+			path = cache.Path
+		}
 		models = append(models, gatewayModelStatus{
 			ID: profile.ID, Context: profile.Context.Size, TrainingContext: profile.Context.Original,
 			Quantization: profile.Model.Quant, SizeBytes: profile.Model.SizeBytes,
-			Cached: cache.State == "present", CanDelete: cache.State != "missing" && !protected, Protected: protected,
+			Cached: cache.State == "present", CanDelete: onDisk, Protected: protected, Path: path,
 		})
 	}
 	state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
@@ -588,6 +607,7 @@ func gatewayCatalog(root string) ([]gatewayModelStatus, error) {
 		}
 		models = append(models, gatewayModelStatus{
 			ID: strings.TrimSuffix(entry.Name(), ".gguf"), SizeBytes: info.Size(), Cached: true, CanDelete: true, Custom: true,
+			Path: filepath.Join(state.Models, entry.Name()),
 		})
 	}
 	return models, nil
@@ -599,6 +619,69 @@ func mustGatewayProfile(id string) manifest.Profile {
 		panic(err)
 	}
 	return profile
+}
+
+var revealInFinder = func(path string) error {
+	output, err := exec.Command("open", "-R", path).CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(output))
+		if message == "" {
+			return fmt.Errorf("show in Finder: %w", err)
+		}
+		return fmt.Errorf("show in Finder: %s", message)
+	}
+	return nil
+}
+
+func catalogModelFile(root string, modelID string) (string, error) {
+	if strings.HasPrefix(modelID, "custom-") {
+		if strings.ContainsAny(modelID, `/\\`) || strings.Contains(modelID, "..") {
+			return "", fmt.Errorf("invalid custom model id")
+		}
+		state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(state.Models, modelID+".gguf"), nil
+	}
+	profile, err := runnableProfile(modelID)
+	if err != nil {
+		return "", err
+	}
+	state, err := manifest.Paths(root, profile, "")
+	if err != nil {
+		return "", err
+	}
+	return state.Model, nil
+}
+
+func revealCachedModel(root string, modelID string) error {
+	path, err := catalogModelFile(root, modelID)
+	if err != nil {
+		return err
+	}
+	modelPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
+	if err != nil {
+		return err
+	}
+	modelsRoot, err := filepath.Abs(state.Models)
+	if err != nil {
+		return err
+	}
+	relative, err := filepath.Rel(modelsRoot, modelPath)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("refusing to reveal a model outside the Outrider cache")
+	}
+	if _, err := os.Lstat(modelPath); os.IsNotExist(err) {
+		return fmt.Errorf("model %s is not downloaded", modelID)
+	} else if err != nil {
+		return err
+	}
+	return revealInFinder(modelPath)
 }
 
 func deleteCachedModel(root string, modelID string) error {

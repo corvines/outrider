@@ -88,7 +88,7 @@ func TestBlockedAdmissionDoesNotPrepareRuntimeOrModel(t *testing.T) {
 		"OUTRIDER_HOME": root, "LLAMA_SERVER_BIN": "/missing/llama-server",
 		"OUTRIDER_PORT": fmt.Sprintf("%d", port),
 	})
-	if err == nil || !strings.Contains(err.Error(), "admission port") {
+	if err == nil || !strings.Contains(err.Error(), "already in use") {
 		t.Fatalf("error = %v", err)
 	}
 	for _, path := range []string{"models", "downloads", "llama.cpp"} {
@@ -443,6 +443,19 @@ func TestEnvironmentMapKeepsEqualsInValues(t *testing.T) {
 	got := environmentMap([]string{"A=one=two", "B=three", "invalid"})
 	if got["A"] != "one=two" || got["B"] != "three" {
 		t.Fatalf("environment = %#v", got)
+	}
+}
+
+func TestServeUnknownProfileFailsBeforeGateway(t *testing.T) {
+	root := t.TempDir()
+	_, err := run(context.Background(), []string{"serve", "not-a-profile"}, map[string]string{
+		"OUTRIDER_HOME": root,
+	})
+	if err == nil {
+		t.Fatal("expected unknown profile to fail")
+	}
+	if _, statErr := os.Stat(filepath.Join(root, "runs", "gateway.json")); !os.IsNotExist(statErr) {
+		t.Fatalf("gateway record = %v", statErr)
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/corvines/outrider/internal/llama"
+	"github.com/corvines/outrider/internal/manifest"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 	"github.com/corvines/outrider/internal/switcher"
 )
@@ -144,6 +145,76 @@ func TestGatewayHTTPHandlerReportsModelLoading(t *testing.T) {
 	if status.Loading.Phase != "downloading" || status.Loading.Downloaded != 64 || status.Loading.Total != 100 {
 		t.Fatalf("loading progress = %+v", status.Loading)
 	}
+	if status.Loading.Name != "gemma4-26B_q4_0-it.gguf" {
+		t.Fatalf("loading name = %q", status.Loading.Name)
+	}
+}
+
+func TestSwitchGatewayModelEmitsLoadingProgress(t *testing.T) {
+	released := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		switch request.URL.Path {
+		case "/admin/status":
+			_ = json.NewEncoder(writer).Encode(gatewayDashboardStatus{
+				Loading: &gatewayLoadingStatus{
+					Model:      "granite4-h-tiny",
+					Name:       "file.gguf",
+					Phase:      "downloading",
+					Downloaded: 10,
+					Total:      100,
+				},
+			})
+		case "/admin/model":
+			<-released
+			writer.WriteHeader(http.StatusOK)
+		default:
+			http.NotFound(writer, request)
+		}
+	}))
+	defer server.Close()
+
+	progresses := make(chan llama.DownloadProgress, 8)
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- switchGatewayModel(context.Background(), server.URL, "granite4-h-tiny", runOptions{
+			Progress: func(progress llama.DownloadProgress) {
+				select {
+				case progresses <- progress:
+				default:
+				}
+			},
+		})
+	}()
+
+	select {
+	case progress := <-progresses:
+		if progress.Name != "file.gguf" || progress.Downloaded != 10 || progress.Total != 100 {
+			t.Fatalf("progress = %+v", progress)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for progress")
+	}
+	close(released)
+	if err := <-errCh; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPostGatewayJSONReportsStoppedWhenServerCloses(t *testing.T) {
+	started := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(started)
+		<-request.Context().Done()
+	}))
+	defer server.Close()
+	go func() {
+		<-started
+		_ = server.Config.Close()
+	}()
+	err := postGatewayJSON(context.Background(), server.URL+"/admin/model", map[string]string{"model": "tiny"})
+	if err == nil || !strings.Contains(err.Error(), "Outrider stopped") {
+		t.Fatalf("err = %v", err)
+	}
 }
 
 type recordingGatewayBackend struct {
@@ -194,21 +265,24 @@ func TestGatewayCatalogReportsProtectedAndCustomModels(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var tiny, primary, custom gatewayModelStatus
+	found := map[string]gatewayModelStatus{}
 	for _, model := range models {
-		switch model.ID {
-		case "tiny":
-			tiny = model
-		case "qwen35b-mtp":
-			primary = model
-		case "custom-example":
-			custom = model
+		found[model.ID] = model
+	}
+	tiny := found["tiny"]
+	lite := found["qwen3-1.7b"]
+	helper := found["granite4.2-3b"]
+	primary := found["qwen35b-mtp"]
+	custom := found["custom-example"]
+	if tiny.ID != "tiny" || tiny.Protected || tiny.CanDelete || tiny.Cached {
+		t.Fatalf("tiny = %#v", tiny)
+	}
+	for _, model := range []gatewayModelStatus{lite, helper, primary} {
+		if !model.Protected || model.CanDelete || model.Cached {
+			t.Fatalf("protected model = %#v", model)
 		}
 	}
-	if !tiny.Protected || tiny.CanDelete || !primary.Protected || primary.CanDelete {
-		t.Fatalf("protected models = %#v %#v", tiny, primary)
-	}
-	if !custom.Custom || !custom.Cached || !custom.CanDelete || custom.SizeBytes != 5 {
+	if !custom.Custom || !custom.Cached || !custom.CanDelete || custom.Protected || custom.SizeBytes != 5 || custom.Path != customPath {
 		t.Fatalf("custom model = %#v", custom)
 	}
 	if err := deleteCustomModel(root, "custom-example"); err != nil {
@@ -216,6 +290,148 @@ func TestGatewayCatalogReportsProtectedAndCustomModels(t *testing.T) {
 	}
 	if _, err := os.Stat(customPath); !os.IsNotExist(err) {
 		t.Fatalf("custom model remains: %v", err)
+	}
+}
+
+func TestGatewayDeleteRemovesProtectedDownloadAndKeepsCatalogRow(t *testing.T) {
+	root := t.TempDir()
+	profile := mustGatewayProfile("granite4.2-3b")
+	state, err := manifest.Paths(root, profile, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(state.Model), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(state.Model, []byte("gguf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gateway, err := switcher.New([]switcher.Model{{ID: profile.ID}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := gatewayHTTPHandler(gateway, nil, map[string]string{"OUTRIDER_HOME": root}, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/admin/delete", strings.NewReader(`{"model":"granite4.2-3b"}`))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if _, err := os.Stat(state.Model); !os.IsNotExist(err) {
+		t.Fatalf("download remains: %v", err)
+	}
+	models, err := gatewayCatalog(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var helper gatewayModelStatus
+	for _, model := range models {
+		if model.ID == "granite4.2-3b" {
+			helper = model
+		}
+	}
+	if helper.ID != "granite4.2-3b" || !helper.Protected || helper.Cached || helper.CanDelete || helper.Path != "" {
+		t.Fatalf("catalog row after delete = %#v", helper)
+	}
+}
+
+func TestGatewayCatalogReportsOnDiskPath(t *testing.T) {
+	root := t.TempDir()
+	profile := mustGatewayProfile("granite4.2-3b")
+	state, err := manifest.Paths(root, profile, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(state.Model), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(state.Model, []byte("gguf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	models, err := gatewayCatalog(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var helper gatewayModelStatus
+	for _, model := range models {
+		if model.ID == "granite4.2-3b" {
+			helper = model
+		}
+	}
+	if helper.Path != state.Model || helper.Cached || !helper.CanDelete {
+		t.Fatalf("incomplete download = %#v", helper)
+	}
+}
+
+func TestGatewayRevealOpensCachedModel(t *testing.T) {
+	root := t.TempDir()
+	profile := mustGatewayProfile("granite4.2-3b")
+	state, err := manifest.Paths(root, profile, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(state.Model), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(state.Model, []byte("gguf"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var revealed string
+	original := revealInFinder
+	revealInFinder = func(path string) error {
+		revealed = path
+		return nil
+	}
+	t.Cleanup(func() { revealInFinder = original })
+	gateway, err := switcher.New([]switcher.Model{{ID: profile.ID}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler, err := gatewayHTTPHandler(gateway, nil, map[string]string{"OUTRIDER_HOME": root}, 12000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/admin/reveal", strings.NewReader(`{"model":"granite4.2-3b"}`))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	want, err := filepath.Abs(state.Model)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if revealed != want {
+		t.Fatalf("revealed = %q, want %q", revealed, want)
+	}
+	missing := httptest.NewRequest(http.MethodPost, "/admin/reveal", strings.NewReader(`{"model":"qwen3-1.7b"}`))
+	missingResponse := httptest.NewRecorder()
+	handler.ServeHTTP(missingResponse, missing)
+	if missingResponse.Code != http.StatusBadRequest {
+		t.Fatalf("missing reveal status = %d, body = %s", missingResponse.Code, missingResponse.Body.String())
+	}
+}
+
+func TestMachineProgressJSONMatchesVeraProgressLines(t *testing.T) {
+	download, err := encodeMachineProgress(llama.DownloadProgress{
+		Name: "qwen35b-mtp", Downloaded: 8_400_000_000, Total: 21_000_000_000,
+		BytesPerSecond: 15_000_000, ETA: 840 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(download) != `{"name":"qwen35b-mtp","downloaded":8400000000,"total":21000000000,"bytes_per_second":15000000,"eta_seconds":840,"done":false}` {
+		t.Fatalf("download progress = %s", download)
+	}
+	step, err := encodeMachineProgress(llama.DownloadProgress{Name: "starting on 127.0.0.1:11435", Done: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(step) != `{"name":"starting on 127.0.0.1:11435","done":true}` {
+		t.Fatalf("step progress = %s", step)
 	}
 }
 

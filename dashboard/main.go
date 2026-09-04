@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"log"
 	"os"
 	"runtime"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
@@ -23,11 +25,26 @@ var appIcon []byte
 var trayIcon []byte
 
 func main() {
+	endpoint := loopbackEndpoint()
+	owner := newGatewayOwner(endpoint)
+	startCtx, cancelStart := context.WithTimeout(context.Background(), 20*time.Second)
+	if err := owner.Ensure(startCtx); err != nil {
+		log.Printf("outrider: could not start the local server: %v", err)
+	}
+	cancelStart()
+	defer func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		if err := owner.Stop(stopCtx); err != nil {
+			log.Printf("outrider: could not stop the local server: %v", err)
+		}
+	}()
+
 	app := application.New(application.Options{
 		Name:        "Outrider",
 		Description: "Local model serving dashboard",
 		Services: []application.Service{
-			application.NewService(NewDashboardService(loopbackEndpoint())),
+			application.NewService(NewDashboardService(endpoint)),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -79,7 +96,7 @@ func main() {
 	tray.SetMenu(menu)
 
 	if err := app.Run(); err != nil {
-		log.Fatal(err)
+		log.Printf("outrider: %v", err)
 	}
 }
 

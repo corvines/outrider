@@ -1,8 +1,8 @@
 # Outrider dashboard
 
-The dashboard is a Wails v3 beta shell around Outrider's loopback gateway. It
-provides a native macOS menu-bar item and a web frontend; inference and model
-lifecycle remain owned by the Outrider daemon.
+The dashboard is a Wails v3 beta shell around Outrider's loopback gateway. Opening
+the app starts the local server. Closing the window hides it and leaves the
+server running. Quit Outrider from the menu bar stops the server.
 
 ## Development
 

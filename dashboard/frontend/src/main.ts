@@ -108,7 +108,6 @@ const content = document.querySelector<HTMLElement>(".content")!;
 const navButtons = document.querySelectorAll<HTMLButtonElement>(".nav button[data-target]");
 const pages = document.querySelectorAll<HTMLElement>(".page");
 let memorySamples: number[] = [];
-const hiddenModels = new Set<string>();
 let pendingDeleteModel = "";
 
 const pageMeta: Record<string, {title: string}> = {
@@ -187,14 +186,26 @@ async function refresh() {
   }
 }
 
+function catalogUnavailable(snapshot: Awaited<ReturnType<typeof DashboardService.Snapshot>>) {
+  return snapshot.gatewayHealth === "offline" && !(snapshot.models && snapshot.models.length);
+}
+
+function downloadStatus(entry: {cached: boolean; path?: string}) {
+  if (entry.cached) return "On disk";
+  if (entry.path) return "Incomplete download";
+  return "Not downloaded";
+}
+
 function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Snapshot>>) {
-  if (snapshot.error) { renderOffline(snapshot.error); return; }
+  if (catalogUnavailable(snapshot)) { renderOffline(snapshot.error || "Outrider is offline."); return; }
   const healthy = snapshot.gatewayHealth === "ok";
   const legacy = snapshot.gatewayHealth === "legacy";
   const loading = snapshot.loading;
   dot.className = `status-dot ${healthy ? "ok" : legacy ? "legacy" : ""}`;
   label.textContent = loading ? "Loading model" : healthy ? "Gateway healthy" : legacy ? "Gateway connected (legacy)" : "Gateway unavailable";
-  detail.textContent = legacy
+  detail.textContent = snapshot.error
+    ? snapshot.error
+    : legacy
     ? "Catalog is read-only; restart Outrider from the current build to enable controls"
     : loading ? `Preparing ${loading.model}…` : snapshot.model.preset ? `${snapshot.model.preset} · ${snapshot.model.kind}` : "No model loaded";
   renderLoading(loading);
@@ -208,30 +219,35 @@ function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Sna
   updated.textContent = snapshot.updatedAt ? new Date(snapshot.updatedAt).toLocaleTimeString() : "—";
   performanceEndpoint.textContent = snapshot.gatewayEndpoint || "—";
   performanceUpdated.textContent = snapshot.updatedAt ? `updated ${new Date(snapshot.updatedAt).toLocaleTimeString()}` : "—";
-  const catalog = (snapshot.models ?? []).filter((entry) => !hiddenModels.has(entry.id));
+  const catalog = snapshot.models ?? [];
   modelCount.textContent = `${catalog.length}`;
   const activeModel = catalog.find((entry) => entry.id === snapshot.model.preset);
   setContextText(formatContext(activeModel?.context ?? 0));
   stopModel.disabled = !healthy || snapshot.model.kind !== "running" || !!loading;
   pauseModel.disabled = !healthy || !loading || loading.phase === "paused" || loading.phase === "error";
   pauseModel.textContent = loading?.phase === "paused" ? "Paused" : "Pause loading";
+  actionStatus.classList.toggle("error", !!snapshot.error);
   models.innerHTML = catalog.length ? catalog.map((entry) => {
     const active = entry.id === snapshot.model.preset && snapshot.model.kind === "running";
     const disabled = !healthy || !!loading ? "disabled" : "";
     let actions = "";
+    if (entry.protected) actions += `<span class="protected-badge">Protected</span>`;
+    const canReveal = !!entry.path;
+    actions += `<button class="model-action" type="button" data-action="reveal" data-model="${escapeHTML(entry.id)}" ${canReveal ? "" : "disabled"}>Show in Finder</button>`;
     if (entry.custom) {
-      actions = `<span class="loaded-badge downloaded-badge">Downloaded</span><button class="model-action model-delete" type="button" data-action="delete" data-model="${escapeHTML(entry.id)}" ${disabled}>Delete</button>`;
+      actions += `<span class="loaded-badge downloaded-badge">Downloaded</span><button class="model-action model-delete" type="button" data-action="delete" data-model="${escapeHTML(entry.id)}" ${disabled}>Delete</button>`;
     } else if (active) {
-      actions = `<span class="loaded-badge">Loaded</span><button class="model-action" type="button" data-action="unload" data-model="${escapeHTML(entry.id)}" ${disabled}>Unload</button>`;
+      actions += `<span class="loaded-badge">Loaded</span><button class="model-action" type="button" data-action="unload" data-model="${escapeHTML(entry.id)}" ${disabled}>Unload</button>`;
     } else if (!entry.cached) {
-      actions = `<button class="model-action" type="button" data-action="download" data-model="${escapeHTML(entry.id)}" ${disabled}>Download</button>`;
-    } else {
-      actions = `<button class="model-action" type="button" data-action="load" data-model="${escapeHTML(entry.id)}" ${disabled}>Load</button>`;
+      actions += `<button class="model-action" type="button" data-action="download" data-model="${escapeHTML(entry.id)}" ${disabled}>Download</button>`;
       if (entry.canDelete) actions += `<button class="model-action model-delete" type="button" data-action="delete" data-model="${escapeHTML(entry.id)}" ${disabled}>Delete</button>`;
-      else if (entry.protected) actions += `<span class="protected-badge">Protected</span>`;
+    } else {
+      actions += `<button class="model-action" type="button" data-action="load" data-model="${escapeHTML(entry.id)}" ${disabled}>Load</button>`;
+      if (entry.canDelete) actions += `<button class="model-action model-delete" type="button" data-action="delete" data-model="${escapeHTML(entry.id)}" ${disabled}>Delete</button>`;
     }
-    const detail = entry.custom ? `${formatBytes(entry.sizeBytes ?? 0)} · downloaded file` : `${formatContext(entry.context)} context · ${escapeHTML(entry.quantization || "unknown quant")}`;
-    return `<div class="model"><div><strong>${escapeHTML(entry.id)}</strong><br><small>${detail}</small></div><div class="model-actions">${actions}</div></div>`;
+    const spec = entry.custom ? `${formatBytes(entry.sizeBytes ?? 0)} · downloaded file` : `${formatContext(entry.context)} context · ${escapeHTML(entry.quantization || "unknown quant")}`;
+    const pathLine = entry.path ? `<small class="model-path">${escapeHTML(entry.path)}</small>` : "";
+    return `<div class="model"><div class="model-copy"><strong>${escapeHTML(entry.id)}</strong><br><small>${downloadStatus(entry)} · ${spec}</small>${pathLine}</div><div class="model-actions">${actions}</div></div>`;
   }).join("") : `<div class="empty">No models available.</div>`;
 }
 
@@ -278,9 +294,10 @@ let actionInFlight = false;
 
 function setActionBusy(busy: boolean) {
   actionInFlight = busy;
-  stopModel.disabled = busy;
-  pauseModel.disabled = busy;
-  models.querySelectorAll<HTMLButtonElement>("button[data-model]").forEach((button) => { button.disabled = busy || button.dataset.model === undefined; });
+  if (!busy) return;
+  stopModel.disabled = true;
+  pauseModel.disabled = true;
+  models.querySelectorAll<HTMLButtonElement>("button[data-model]").forEach((button) => { button.disabled = true; });
 }
 
 async function runAction(message: string, action: () => Promise<Awaited<ReturnType<typeof DashboardService.Snapshot>>>) {
@@ -290,9 +307,12 @@ async function runAction(message: string, action: () => Promise<Awaited<ReturnTy
   try {
     const snapshot = await action();
     renderSnapshot(snapshot);
-    actionStatus.textContent = snapshot.error ? "Action failed" : "Updated";
+    actionStatus.textContent = snapshot.error || "Updated";
+    actionStatus.classList.toggle("error", !!snapshot.error);
   } catch (error) {
     actionStatus.textContent = String(error);
+    actionStatus.classList.add("error");
+    void refresh();
   } finally {
     setActionBusy(false);
   }
@@ -371,6 +391,8 @@ models.addEventListener("click", (event) => {
     void runAction("Unloading model…", () => DashboardService.StopModel());
   } else if (action === "download") {
     void runAction(`Downloading ${modelID}…`, () => DashboardService.DownloadModel(modelID));
+  } else if (action === "reveal") {
+    void runAction(`Showing ${modelID} in Finder…`, () => DashboardService.RevealModel(modelID));
   } else {
     void runAction(`Loading ${modelID}…`, () => DashboardService.LoadModel(modelID));
   }
@@ -385,11 +407,7 @@ deleteConfirm.addEventListener("click", () => {
   pendingDeleteModel = "";
   deleteDialog.classList.add("hidden");
   if (!modelID) return;
-  void runAction(`Deleting ${modelID}…`, async () => {
-    const snapshot = await DashboardService.DeleteModel(modelID);
-    if (!snapshot.error) hiddenModels.add(modelID);
-    return snapshot;
-  });
+  void runAction(`Deleting ${modelID}…`, () => DashboardService.DeleteModel(modelID));
 });
 
 showPage("overview");

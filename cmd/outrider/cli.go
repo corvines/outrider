@@ -337,11 +337,11 @@ func runWithOptions(
 		if len(argv) != 2 {
 			return "", usageError("serve accepts at most one runnable profile id")
 		}
-		session, err := startSession(ctx, argv[1], environment, options)
+		output, err := serveProfile(ctx, argv[1], environment, options)
 		if err != nil {
 			return "", err
 		}
-		return formatOutput(newUpOutput(session), options.Human)
+		return formatOutput(output, options.Human)
 	case "run":
 		if len(argv) != 2 {
 			return "", usageError("run expects exactly one profile or development model name")
@@ -816,7 +816,14 @@ func startSession(
 	modelPreparationMS := elapsedMilliseconds(modelStartedAt)
 	modelDownloadMS := tracker.totalMS - runtimeDownloadMS
 	options.notice("Loading %s and waiting for it to become ready...", profile.ID)
+	startName := fmt.Sprintf("starting on %s:%d", plan.Host, plan.Port)
+	if options.Progress != nil {
+		options.Progress(llama.DownloadProgress{Name: startName})
+	}
 	status, err := runnerprocess.StartWithLock(ctx, plan, runnerprocess.StartOptions{}, lock)
+	if options.Progress != nil {
+		options.Progress(llama.DownloadProgress{Name: startName, Done: err == nil})
+	}
 	if err != nil {
 		return runSession{}, err
 	}

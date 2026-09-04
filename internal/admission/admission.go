@@ -190,9 +190,9 @@ func Evaluate(profile manifest.Profile, plan manifest.Plan, snapshot Snapshot) R
 		memoryClass = ClassBlocked
 		memoryAction = "restore access to the macOS hw.memsize probe"
 	} else if snapshot.PhysicalMemoryBytes < validatedBytes {
-		memoryResult = ResultWarn
-		memoryClass = ClassDegraded
-		memoryAction = "qualify this profile on the smaller memory class before release"
+		memoryResult = ResultFail
+		memoryClass = ClassBlocked
+		memoryAction = "choose a profile validated for this machine's memory"
 	}
 	report.add(Check{
 		ID: "physical_memory", Result: memoryResult, Measured: formatBytes(snapshot.PhysicalMemoryBytes),

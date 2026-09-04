@@ -26,9 +26,22 @@ func TestAdmissionClasses(t *testing.T) {
 	}
 
 	degraded := ready
-	degraded.PhysicalMemoryBytes = 32 * 1024 * 1024 * 1024
+	degraded.MemoryFreePercent = 5
 	if report := Evaluate(profile, plan, degraded); report.Class != ClassDegraded {
 		t.Fatalf("degraded report = %#v", report)
+	}
+
+	// Too little memory refuses the profile outright. Warning and then
+	// downloading tens of gigabytes that cannot load is worse than a refusal.
+	short := ready
+	short.PhysicalMemoryBytes = 8 * 1024 * 1024 * 1024
+	report := Evaluate(profile, plan, short)
+	if report.Class != ClassBlocked || !report.Blocking() {
+		t.Fatalf("short-memory report = %#v", report)
+	}
+	memory := checkByID(t, report, "physical_memory")
+	if memory.Result != ResultFail || memory.NextAction == "" {
+		t.Fatalf("memory check = %#v", memory)
 	}
 
 	blocked := ready
@@ -76,4 +89,15 @@ func TestBlockingErrorNamesMeasurementRequirementAndAction(t *testing.T) {
 			t.Fatalf("error %q does not contain %q", err, want)
 		}
 	}
+}
+
+func checkByID(t *testing.T, report Report, id string) Check {
+	t.Helper()
+	for _, check := range report.Checks {
+		if check.ID == id {
+			return check
+		}
+	}
+	t.Fatalf("report has no %s check: %#v", id, report.Checks)
+	return Check{}
 }

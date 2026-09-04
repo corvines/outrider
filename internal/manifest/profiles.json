@@ -323,11 +323,11 @@
     "runnable": true,
     "description": "Qwen3.5 2B Q4_K_M helper at 32K context",
     "model": {
-      "repo": "unsloth/Qwen3.5-2B-GGUF",
+      "repo": "unsloth/Qwen3.5-2B-MTP-GGUF",
       "file": "Qwen3.5-2B-Q4_K_M.gguf",
       "quant": "Q4_K_M",
-      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-      "sizeBytes": 1280835840
+      "sha256": "18c92228fc1498a02506f64593f7cc8cc02f406f732a217c6ba99ad1254d4f0b",
+      "sizeBytes": 1329851808
     },
     "context": { "size": 32768, "original": 262144 },
     "gpuLayers": "auto",
@@ -351,7 +351,7 @@
       "minP": 0,
       "repeatPenalty": 1.0
     },
-    "speculation": { "mode": "none" },
+    "speculation": { "mode": "mtp", "tokens": 2, "minTokens": 0, "minProbability": 0 },
     "persistence": { "enabled": false },
     "admission": { "validatedPhysicalMemoryMiB": 8192 }
   },

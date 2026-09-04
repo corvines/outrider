@@ -2,9 +2,11 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/corvines/outrider/internal/admission"
 	"github.com/corvines/outrider/internal/endpoint"
+	"github.com/corvines/outrider/internal/kvstate"
 	"github.com/corvines/outrider/internal/manifest"
 	"github.com/corvines/outrider/internal/ollamacache"
 	runnerprocess "github.com/corvines/outrider/internal/process"
@@ -104,6 +106,8 @@ type stateOutput struct {
 	PIDFile       string `json:"pidFile"`
 	LifecycleLock string `json:"lifecycleLock"`
 	LogFile       string `json:"logFile"`
+	SlotDirectory string `json:"slotDirectory"`
+	SlotSnapshot  string `json:"slotSnapshot"`
 }
 
 type planOutput struct {
@@ -132,6 +136,7 @@ type upOutput struct {
 	Model      string             `json:"model"`
 	Argv       []string           `json:"argv"`
 	Admission  admission.Report   `json:"admission"`
+	Session    *kvstate.Result    `json:"session,omitempty"`
 }
 
 type demoOutput struct {
@@ -159,6 +164,8 @@ func newPlanOutput(plan manifest.Plan) planOutput {
 			Root: plan.State.Root, Binary: plan.State.Executable, ModelCache: plan.State.Models,
 			Model: plan.State.Model, RunDirectory: plan.State.Run, PIDFile: plan.State.PID,
 			LifecycleLock: plan.State.Lock, LogFile: plan.State.Log,
+			SlotDirectory: plan.State.Slots,
+			SlotSnapshot:  filepath.Join(plan.State.Slots, plan.Session.Filename),
 		},
 		Endpoint: plan.Endpoint, HealthEndpoint: plan.HealthEndpoint,
 		Argv: append([]string{plan.Executable}, plan.Args...),
@@ -209,7 +216,7 @@ func newUpOutput(session runSession) upOutput {
 		Health: status.Health, Detail: status.Detail, LogFile: status.LogFile,
 		Executable: session.Preparation.Plan.Executable, Model: session.Preparation.Plan.State.Model,
 		Argv:      append([]string{session.Preparation.Plan.Executable}, session.Preparation.Plan.Args...),
-		Admission: session.Preparation.Admission,
+		Admission: session.Preparation.Admission, Session: status.Session,
 	}
 	if status.Timings != nil || session.ColdStartMS != nil || session.Preparation.TotalReadyMS > 0 {
 		output.Timings = make(map[string]float64)

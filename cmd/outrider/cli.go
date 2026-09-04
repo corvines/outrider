@@ -44,7 +44,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider demo <profile>
   outrider ps
   outrider logs [--lines N]
-  outrider stop
+  outrider stop [--skip-checkpoint]
 
 Compatibility aliases: ls = models, up = serve, down = stop.
 
@@ -83,6 +83,7 @@ type runOptions struct {
 	CurrentExecutable func() (string, error)
 	Confirm           func(string) (bool, error)
 	Human             bool
+	Ephemeral         bool
 }
 
 func (options runOptions) notice(format string, arguments ...any) {
@@ -371,10 +372,11 @@ func runWithOptions(
 		}
 		return formatOutput(status, options.Human)
 	case "stop":
-		if len(argv) != 1 {
-			return "", usageError("stop does not accept arguments")
+		discardSession, err := parseStopArguments(argv[1:])
+		if err != nil {
+			return "", err
 		}
-		status, err := stopServices(ctx, environment)
+		status, err := stopServices(ctx, environment, discardSession)
 		if err != nil {
 			return "", err
 		}
@@ -430,7 +432,7 @@ func uninstall(
 	choice stateChoice,
 	options runOptions,
 ) (string, error) {
-	if _, err := stopServices(ctx, environment); err != nil {
+	if _, err := stopServices(ctx, environment, false); err != nil {
 		return "", err
 	}
 	layout, err := installer.ResolveUserLayout(environment["HOME"])
@@ -522,7 +524,7 @@ func runInteractive(
 		}
 		operationErr = runChat(session.Preparation.Plan.Endpoint)
 	}
-	cleanupErr := cleanupSession(session)
+	cleanupErr := cleanupSession(session, false)
 	if operationErr != nil && cleanupErr != nil {
 		return "", runnerErrorf("%v; cleanup also failed: %v", operationErr, cleanupErr)
 	}
@@ -611,6 +613,7 @@ func developmentProfile(model ollamacache.Model) (manifest.Profile, error) {
 	}
 	profile.ID = model.Name
 	profile.Description = "Development model from the local Ollama cache"
+	profile.Persistence.Enabled = false
 	profile.Model = manifest.Artifact{
 		LocalPath: model.Path, SHA256: strings.TrimPrefix(model.Digest, "sha256:"), SizeBytes: model.SizeBytes,
 	}
@@ -673,6 +676,19 @@ func parseChatArguments(arguments []string) (string, error) {
 		return "", usageError("chat accepts only --endpoint URL")
 	}
 	return *endpoint, nil
+}
+
+func parseStopArguments(arguments []string) (bool, error) {
+	flags := flag.NewFlagSet("stop", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	discard := flags.Bool("skip-checkpoint", false, "stop without checkpointing persistent KV")
+	if err := flags.Parse(arguments); err != nil {
+		return false, usageError(err.Error())
+	}
+	if flags.NArg() != 0 {
+		return false, usageError("stop accepts only --skip-checkpoint")
+	}
+	return *discard, nil
 }
 
 func canonicalCommand(command string) string {
@@ -778,7 +794,9 @@ func startSession(
 		if report.Blocking() {
 			return runSession{}, &admission.Error{Report: report}
 		}
-		status, err := runnerprocess.StartWithLock(ctx, initialPlan, runnerprocess.StartOptions{}, lock)
+		status, err := runnerprocess.StartWithLock(ctx, initialPlan, runnerprocess.StartOptions{
+			SkipSessionRestore: options.Ephemeral,
+		}, lock)
 		if err != nil {
 			return runSession{}, err
 		}
@@ -820,7 +838,9 @@ func startSession(
 	if options.Progress != nil {
 		options.Progress(llama.DownloadProgress{Name: startName})
 	}
-	status, err := runnerprocess.StartWithLock(ctx, plan, runnerprocess.StartOptions{}, lock)
+	status, err := runnerprocess.StartWithLock(ctx, plan, runnerprocess.StartOptions{
+		SkipSessionRestore: options.Ephemeral,
+	}, lock)
 	if options.Progress != nil {
 		options.Progress(llama.DownloadProgress{Name: startName, Done: err == nil})
 	}
@@ -851,6 +871,7 @@ func runDemo(
 	environment map[string]string,
 	options runOptions,
 ) (string, error) {
+	options.Ephemeral = true
 	session, operationErr := startSession(ctx, profileID, environment, options)
 	var output string
 	if operationErr == nil {
@@ -879,7 +900,7 @@ func runDemo(
 		}
 	}
 
-	cleanupErr := cleanupSession(session)
+	cleanupErr := cleanupSession(session, true)
 	if operationErr != nil && cleanupErr != nil {
 		return "", runnerErrorf("%v; cleanup also failed: %v", operationErr, cleanupErr)
 	}
@@ -892,13 +913,15 @@ func runDemo(
 	return output, nil
 }
 
-func cleanupSession(session runSession) error {
+func cleanupSession(session runSession, discardSession bool) error {
 	if !shouldCleanup(session) {
 		return nil
 	}
-	cleanupContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	cleanupContext, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	status, err := runnerprocess.Stop(cleanupContext, session.Preparation.Plan, runnerprocess.StopOptions{})
+	status, err := runnerprocess.Stop(cleanupContext, session.Preparation.Plan, runnerprocess.StopOptions{
+		DiscardSession: discardSession,
+	})
 	if err != nil {
 		return err
 	}

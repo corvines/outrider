@@ -110,7 +110,7 @@
     },
     "speculation": { "mode": "none" },
     "persistence": { "enabled": false },
-    "extraArgs": ["--reasoning", "off", "--chat-template-kwargs", "{\"enable_thinking\":false}"],
+    "extraArgs": ["--reasoning", "off"],
     "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
   {
@@ -186,7 +186,7 @@
     },
     "speculation": { "mode": "none" },
     "persistence": { "enabled": false },
-    "extraArgs": ["--reasoning", "off", "--chat-template-kwargs", "{\"enable_thinking\":false}"],
+    "extraArgs": ["--reasoning", "off"],
     "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
   {
@@ -229,8 +229,7 @@
       "minProbability": 0
     },
     "persistence": { "enabled": false },
-    "extraArgs": ["--chat-template-kwargs", "{\"enable_thinking\":false}"],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+        "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
   {
     "id": "granite4-h-tiny",
@@ -310,8 +309,7 @@
       "minProbability": 0
     },
     "persistence": { "enabled": false },
-    "extraArgs": ["--chat-template-kwargs", "{\"enable_thinking\":false}"],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+        "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
   {
     "id": "gemma4-26b",

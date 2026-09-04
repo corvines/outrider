@@ -242,7 +242,7 @@ func gatewayGone(err error) bool {
 	return false
 }
 
-func stopServices(ctx context.Context, environment map[string]string) (serviceStatusOutput, error) {
+func stopServices(ctx context.Context, environment map[string]string, discardSession bool) (serviceStatusOutput, error) {
 	gatewayPlan, err := gatewayProcessPlan(environment)
 	if err != nil {
 		return serviceStatusOutput{}, err
@@ -255,7 +255,7 @@ func stopServices(ctx context.Context, environment map[string]string) (serviceSt
 	if err != nil {
 		return serviceStatusOutput{}, err
 	}
-	model, err := runnerprocess.StopActive(ctx, state, runnerprocess.StopOptions{})
+	model, err := runnerprocess.StopActive(ctx, state, runnerprocess.StopOptions{DiscardSession: discardSession})
 	if err != nil {
 		return serviceStatusOutput{}, err
 	}

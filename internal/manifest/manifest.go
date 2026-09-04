@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	DefaultHost         = "127.0.0.1"
-	DefaultPort         = 11435
-	DeniedBrowserOrigin = "https://outrider.invalid"
+	DefaultHost               = "127.0.0.1"
+	DefaultPort               = 11435
+	DeniedBrowserOrigin       = "https://outrider.invalid"
+	DefaultChatTemplateKwargs = `{"enable_thinking":false}`
 )
 
 var LlamaRelease = Release{
@@ -34,7 +35,8 @@ var protectedFlags = map[string]struct{}{
 	"--gpu-layers": {}, "-ngl": {}, "--fit": {}, "--flash-attn": {},
 	"--spec-type": {}, "--spec-draft-n-max": {}, "--spec-draft-model": {}, "-md": {},
 	"--cors-origins": {}, "--cors-credentials": {}, "--no-cors-credentials": {},
-	"--slots": {}, "--no-slots": {}, "--slot-save-path": {},
+	"--chat-template-kwargs": {},
+	"--slots":                {}, "--no-slots": {}, "--slot-save-path": {},
 }
 
 //go:embed profiles.json

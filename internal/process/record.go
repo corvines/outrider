@@ -29,6 +29,11 @@ type ProcessRecord struct {
 	Preset           string   `json:"preset"`
 	Port             int      `json:"port"`
 	LogFile          string   `json:"logFile"`
+	SessionEnabled   bool     `json:"sessionEnabled,omitempty"`
+	SessionSlot      int      `json:"sessionSlot,omitempty"`
+	SessionKey       string   `json:"sessionKey,omitempty"`
+	SessionDirectory string   `json:"sessionDirectory,omitempty"`
+	SessionFilename  string   `json:"sessionFilename,omitempty"`
 }
 
 type ObservedProcess struct {
@@ -133,7 +138,18 @@ func validProcessRecord(record ProcessRecord) bool {
 		record.ArgvSHA256 != "" &&
 		record.Preset != "" &&
 		record.Port > 0 && record.Port <= 65535 &&
-		record.LogFile != ""
+		record.LogFile != "" && validSessionRecord(record)
+}
+
+func validSessionRecord(record ProcessRecord) bool {
+	if !record.SessionEnabled {
+		return true
+	}
+	decodedKey, err := hex.DecodeString(record.SessionKey)
+	return err == nil && len(decodedKey) == sha256.Size && record.SessionKey == strings.ToLower(record.SessionKey) &&
+		record.SessionSlot >= 0 &&
+		filepath.IsAbs(record.SessionDirectory) &&
+		record.SessionFilename == "slot-"+record.SessionKey+".bin"
 }
 
 func identityMismatchError(record ProcessRecord, observed ObservedProcess) error {

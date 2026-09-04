@@ -12,7 +12,14 @@ Apple silicon only. Model weights are downloaded from their publishers and carry
 
 ## Install
 
-Download `outrider_darwin_arm64.tar.gz` and `SHA256SUMS` from the [latest release](https://github.com/corvines/outrider/releases/latest), then verify, unpack and install for the current user:
+Build it and install it for the current user:
+
+```sh
+go build ./cmd/outrider
+./outrider install
+```
+
+Released builds are on the [releases page](https://github.com/corvines/outrider/releases) as `outrider_darwin_arm64.tar.gz` with a `SHA256SUMS` alongside. Verify, unpack and install the same way:
 
 ```sh
 shasum -a 256 -c SHA256SUMS
@@ -20,7 +27,7 @@ tar -xzf outrider_darwin_arm64.tar.gz
 ./outrider install
 ```
 
-`scripts/install.sh` runs those three steps as one command. To build from source instead, `go build ./cmd/outrider` and run `./outrider install`.
+`scripts/install.sh` does those three steps in one command.
 
 This installs `~/.local/bin/outrider` without administrator privileges. Add `~/.local/bin` to `PATH` if needed. Running `install` again upgrades an Outrider-owned installation; `outrider uninstall` removes it safely, asking first whether to delete the state root (`~/Library/Caches/Outrider` by default, or `OUTRIDER_HOME`). Pass `--purge` or `--keep-state` to answer without a prompt. To replace an older unmarked Outrider binary, run `./outrider install --replace-unmanaged` explicitly.
 

@@ -50,10 +50,10 @@ Compatibility aliases: ls = models, up = serve, down = stop.
 
 Add --json anywhere for machine-readable output.
 
-Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME,
-OUTRIDER_PORT, OLLAMA_MODELS.
+Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME, OUTRIDER_PORT.
 
-Cached-model runs read local Ollama GGUF files but do not start Ollama.
+Cached-model runs read GGUF files already on the machine. They start no
+other program.
 `
 
 type runPreparation struct {

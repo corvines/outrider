@@ -23,7 +23,6 @@ type Resolved struct {
 	Slots           int
 	Modalities      Modalities
 	SupportsTools   bool
-	Speculation     string
 	Sampling        ResolvedSampling
 	Samplers        []string
 }
@@ -51,13 +50,12 @@ type propsResponse struct {
 	DefaultGenerationSettings struct {
 		Context int `json:"n_ctx"`
 		Params  struct {
-			Temperature      float64  `json:"temperature"`
-			TopP             float64  `json:"top_p"`
-			TopK             int      `json:"top_k"`
-			MinP             float64  `json:"min_p"`
-			RepeatPenalty    float64  `json:"repeat_penalty"`
-			Samplers         []string `json:"samplers"`
-			SpeculativeTypes string   `json:"speculative.types"`
+			Temperature   float64  `json:"temperature"`
+			TopP          float64  `json:"top_p"`
+			TopK          int      `json:"top_k"`
+			MinP          float64  `json:"min_p"`
+			RepeatPenalty float64  `json:"repeat_penalty"`
+			Samplers      []string `json:"samplers"`
 		} `json:"params"`
 	} `json:"default_generation_settings"`
 	TotalSlots int    `json:"total_slots"`
@@ -90,7 +88,6 @@ func FetchResolved(ctx context.Context, endpointURL string, modelID string) (Res
 		ModelPath:     props.ModelPath,
 		Slots:         props.TotalSlots,
 		SupportsTools: props.ChatTemplateCaps.SupportsTools,
-		Speculation:   normalizeSpeculation(props.DefaultGenerationSettings.Params.SpeculativeTypes),
 		Samplers:      props.DefaultGenerationSettings.Params.Samplers,
 		Modalities: Modalities{
 			Vision: props.Modalities.Vision,
@@ -119,15 +116,6 @@ func FetchResolved(ctx context.Context, endpointURL string, modelID string) (Res
 		}
 	}
 	return resolved, nil
-}
-
-// normalizeSpeculation drops the backend's word for "no draft path" so the
-// field is empty in the same case the profile's own is.
-func normalizeSpeculation(mode string) string {
-	if mode == "none" {
-		return ""
-	}
-	return mode
 }
 
 func fetchJSON(ctx context.Context, endpointURL string, path string, target any) error {

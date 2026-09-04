@@ -16,8 +16,7 @@ const propsPayload = `{
       "top_k": 20,
       "min_p": 0.0,
       "repeat_penalty": 1.05,
-      "samplers": ["penalties", "dry", "top_n_sigma", "top_k", "typ_p", "top_p", "min_p", "xtc", "temperature"],
-      "speculative.types": "none"
+      "samplers": ["penalties", "dry", "top_n_sigma", "top_k", "typ_p", "top_p", "min_p", "xtc", "temperature"]
     }
   },
   "total_slots": 1,
@@ -69,19 +68,6 @@ func TestFetchResolvedReadsBothRoutes(t *testing.T) {
 	}
 	if resolved.Slots != 1 || resolved.Sampling.TopK != 20 {
 		t.Fatalf("slots = %d, top_k = %d", resolved.Slots, resolved.Sampling.TopK)
-	}
-}
-
-// The backend says "none" where a profile says nothing. Both mean no draft
-// path, and a caller comparing the two halves should see them agree.
-func TestFetchResolvedEmptiesTheBackendsWordForNoSpeculation(t *testing.T) {
-	url := propsServer(t, `{"data":[{"id":"qwen","meta":{"n_ctx_train":262144}}]}`)
-	resolved, err := FetchResolved(context.Background(), url, "qwen")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if resolved.Speculation != "" {
-		t.Fatalf("speculation = %q", resolved.Speculation)
 	}
 }
 

@@ -102,7 +102,6 @@ type resolvedState struct {
 	Slots           int               `json:"n_slots,omitempty"`
 	Modalities      *modalities       `json:"modalities,omitempty"`
 	SupportsTools   bool              `json:"supports_tools,omitempty"`
-	Speculation     string            `json:"speculation,omitempty"`
 	Sampling        *samplingSettings `json:"sampling,omitempty"`
 	Samplers        []string          `json:"samplers,omitempty"`
 }
@@ -136,7 +135,7 @@ func newResolvedState(resolved endpoint.Resolved) resolvedState {
 		Context: resolved.Context, TrainingContext: resolved.TrainingContext,
 		Quantization: resolved.Quantization, ModelPath: resolved.ModelPath,
 		Slots: resolved.Slots, SupportsTools: resolved.SupportsTools,
-		Speculation: resolved.Speculation, Samplers: resolved.Samplers,
+		Samplers: resolved.Samplers,
 		Modalities: &modalities{
 			Vision: resolved.Modalities.Vision,
 			Audio:  resolved.Modalities.Audio,

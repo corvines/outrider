@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/corvines/outrider/internal/catalog"
+	"github.com/corvines/outrider/internal/endpoint"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -290,5 +291,147 @@ func TestHealthReportsTheRunningBuild(t *testing.T) {
 	}
 	if parsed.Status != "ok" || parsed.Version != "1.2.3" || parsed.Commit != "abc123" {
 		t.Fatalf("health = %#v", parsed)
+	}
+}
+
+type loadedBackend struct {
+	fakeBackend
+	model string
+	url   string
+}
+
+func (backend *loadedBackend) Loaded(context.Context) (string, string, bool) {
+	if backend.model == "" {
+		return "", "", false
+	}
+	return backend.model, backend.url, true
+}
+
+func detailFor(t *testing.T, server *Server, id string) (int, map[string]any) {
+	t.Helper()
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/v1/models/"+id, nil))
+	if recorder.Code != http.StatusOK {
+		return recorder.Code, nil
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	return recorder.Code, parsed
+}
+
+func detailEntry(profile string) catalog.Entry {
+	return catalog.Entry{
+		ID: profile, Context: 32768,
+		Requested: catalog.Requested{
+			Context: 32768, GPULayers: "all", FlashAttention: true,
+			KVKeyType: "q8_0", KVValueType: "q8_0", Speculation: "mtp",
+		},
+	}
+}
+
+// A caller compares what was asked for against what the process reports, so
+// the two halves are published side by side and never merged.
+func TestShowModelSeparatesRequestedFromResolved(t *testing.T) {
+	backend := &loadedBackend{model: "primary", url: "http://127.0.0.1:11481"}
+	server, err := New([]catalog.Entry{detailEntry("primary")}, backend, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.resolve = func(context.Context, string, string) (endpoint.Resolved, error) {
+		return endpoint.Resolved{
+			Endpoint: "http://127.0.0.1:11481", Build: "b10516",
+			Context: 16384, TrainingContext: 262144, Quantization: "Q4_K_M",
+			SupportsTools: true, Modalities: endpoint.Modalities{Vision: true},
+		}, nil
+	}
+	status, body := detailFor(t, server, "primary")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	requested, _ := body["requested"].(map[string]any)
+	if requested["n_ctx"] != float64(32768) || requested["kv_key_type"] != "q8_0" ||
+		requested["n_gpu_layers"] != "all" || requested["speculation"] != "mtp" {
+		t.Fatalf("requested = %#v", requested)
+	}
+	resolved, _ := body["resolved"].(map[string]any)
+	if resolved["loaded"] != true || resolved["n_ctx"] != float64(16384) ||
+		resolved["n_ctx_train"] != float64(262144) || resolved["supports_tools"] != true {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+	// The disagreement is the point: 32768 was asked for and 16384 arrived.
+	if requested["n_ctx"] == resolved["n_ctx"] {
+		t.Fatal("the two halves collapsed into one value")
+	}
+	if modalities, _ := resolved["modalities"].(map[string]any); modalities["vision"] != true {
+		t.Fatalf("modalities = %#v", resolved["modalities"])
+	}
+}
+
+// A lookup must never start a model, so a model that is not the loaded one
+// reports itself as not loaded rather than loading to find out.
+func TestShowModelDoesNotLoadToAnswer(t *testing.T) {
+	backend := &loadedBackend{model: "other", url: "http://127.0.0.1:11481"}
+	server, err := New([]catalog.Entry{detailEntry("primary")}, backend, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.resolve = func(context.Context, string, string) (endpoint.Resolved, error) {
+		t.Fatal("resolved a model that is not loaded")
+		return endpoint.Resolved{}, nil
+	}
+	_, body := detailFor(t, server, "primary")
+	resolved, _ := body["resolved"].(map[string]any)
+	if resolved["loaded"] != false {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+	if len(backend.models) != 0 {
+		t.Fatalf("backend was asked to load %v", backend.models)
+	}
+}
+
+// A backend that will not describe itself leaves the resolved half empty. It
+// does not turn a lookup of a known model into a failure.
+func TestShowModelSurvivesAnUndescribableBackend(t *testing.T) {
+	backend := &loadedBackend{model: "primary", url: "http://127.0.0.1:11481"}
+	server, err := New([]catalog.Entry{detailEntry("primary")}, backend, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.resolve = func(context.Context, string, string) (endpoint.Resolved, error) {
+		return endpoint.Resolved{}, errors.New("backend closed the connection")
+	}
+	status, body := detailFor(t, server, "primary")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if resolved, _ := body["resolved"].(map[string]any); resolved["loaded"] != false {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+}
+
+// A backend with no way to report what is loaded still answers the route.
+func TestShowModelWorksWithoutALoader(t *testing.T) {
+	server, err := New([]catalog.Entry{detailEntry("primary")}, &fakeBackend{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, body := detailFor(t, server, "primary")
+	if status != http.StatusOK {
+		t.Fatalf("status = %d", status)
+	}
+	if resolved, _ := body["resolved"].(map[string]any); resolved["loaded"] != false {
+		t.Fatalf("resolved = %#v", resolved)
+	}
+}
+
+func TestShowModelRejectsAnUnknownModel(t *testing.T) {
+	server, err := New([]catalog.Entry{detailEntry("primary")}, &fakeBackend{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status, _ := detailFor(t, server, "absent"); status != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", status)
 	}
 }

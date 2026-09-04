@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/corvines/outrider/internal/catalog"
+	"github.com/corvines/outrider/internal/endpoint"
 )
 
 const maxRequestBytes = 16 << 20
@@ -18,6 +19,16 @@ const maxRequestBytes = 16 << 20
 type Backend interface {
 	Ensure(context.Context, string) (string, error)
 }
+
+// Loader is an optional Backend capability: saying what is loaded right now
+// without loading anything. A backend that does not implement it makes every
+// model report itself as not loaded, which is honest and costs nothing.
+type Loader interface {
+	Loaded(ctx context.Context) (modelID string, endpointURL string, ok bool)
+}
+
+// ResolveFunc reads a running backend's own view of itself.
+type ResolveFunc func(ctx context.Context, endpointURL string, modelID string) (endpoint.Resolved, error)
 
 // AvailabilityFunc answers for one model id. It runs per request so the
 // catalog reflects a download or deletion without a gateway restart.
@@ -34,6 +45,7 @@ type Server struct {
 	backend      Backend
 	availability AvailabilityFunc
 	client       *http.Client
+	resolve      ResolveFunc
 	mu           sync.Mutex
 }
 
@@ -56,6 +68,7 @@ func New(models []catalog.Entry, backend Backend, availability AvailabilityFunc)
 	return &Server{
 		models: byID, ordered: append([]catalog.Entry(nil), models...), backend: backend,
 		availability: availability, client: http.DefaultClient,
+		resolve: endpoint.FetchResolved,
 	}, nil
 }
 
@@ -63,6 +76,7 @@ func (server *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", server.health)
 	mux.HandleFunc("GET /v1/models", server.listModels)
+	mux.HandleFunc("GET /v1/models/{id}", server.showModel)
 	mux.HandleFunc("POST /v1/chat/completions", server.proxyModelRequest)
 	mux.HandleFunc("POST /v1/completions", server.proxyModelRequest)
 	mux.HandleFunc("POST /v1/embeddings", server.proxyModelRequest)
@@ -102,6 +116,56 @@ func (server *Server) listModels(writer http.ResponseWriter, _ *http.Request) {
 		data = append(data, newModelEntry(model, weights))
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"object": "list", "data": data})
+}
+
+// showModel answers for one model: what it is, what outrider asked the
+// backend for, and what a running backend reports back. The two halves are
+// kept apart because only some of a request is confirmed.
+func (server *Server) showModel(writer http.ResponseWriter, request *http.Request) {
+	id := request.PathValue("id")
+	model, exists := server.models[id]
+	if !exists {
+		writeError(writer, http.StatusNotFound, fmt.Sprintf("unknown model %q", id))
+		return
+	}
+	weights := model.Weights
+	if server.availability != nil {
+		current, err := server.availability(model.ID)
+		if err != nil {
+			writeError(writer, http.StatusInternalServerError, "could not inspect model weights")
+			return
+		}
+		weights = current
+	}
+	detail := modelDetail{
+		modelEntry: newModelEntry(model, weights),
+		Requested:  newRequestedSettings(model.Requested),
+	}
+	if resolved, ok := server.resolveLoaded(request.Context(), model.ID); ok {
+		detail.Resolved = newResolvedState(resolved)
+	}
+	writeJSON(writer, http.StatusOK, detail)
+}
+
+// resolveLoaded asks the backend about a model only when that model is the
+// one already serving. Reporting nothing is better than starting a load for
+// a request that reads like a lookup.
+func (server *Server) resolveLoaded(ctx context.Context, modelID string) (endpoint.Resolved, bool) {
+	loader, ok := server.backend.(Loader)
+	if !ok || server.resolve == nil {
+		return endpoint.Resolved{}, false
+	}
+	loaded, backendURL, ok := loader.Loaded(ctx)
+	if !ok || loaded != modelID {
+		return endpoint.Resolved{}, false
+	}
+	resolved, err := server.resolve(ctx, backendURL, modelID)
+	if err != nil {
+		// A backend that will not describe itself is reported as not
+		// described, never as a failed lookup of the model itself.
+		return endpoint.Resolved{}, false
+	}
+	return resolved, true
 }
 
 func (server *Server) proxyModelRequest(writer http.ResponseWriter, request *http.Request) {

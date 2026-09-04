@@ -177,6 +177,23 @@ func (backend *gatewayBackend) Ensure(ctx context.Context, modelID string) (endp
 	return session.Preparation.Plan.Endpoint, nil
 }
 
+// Loaded reports the model serving right now. It inspects the recorded
+// process state and never starts one, so a lookup route can call it.
+func (backend *gatewayBackend) Loaded(ctx context.Context) (string, string, bool) {
+	state, err := activeState(backend.environment)
+	if err != nil {
+		return "", "", false
+	}
+	status, err := runnerprocess.GetActiveStatus(ctx, state)
+	if err != nil || status.Kind != runnerprocess.StatusRunning {
+		return "", "", false
+	}
+	if status.Health == nil || !*status.Health || status.Preset == "" || status.Endpoint == "" {
+		return "", "", false
+	}
+	return status.Preset, status.Endpoint, true
+}
+
 func (backend *gatewayBackend) beginLoading(modelID string) {
 	backend.loadingMu.Lock()
 	defer backend.loadingMu.Unlock()

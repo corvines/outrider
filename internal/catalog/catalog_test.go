@@ -98,3 +98,36 @@ func TestOfferedSkipsDevelopmentProfiles(t *testing.T) {
 		}
 	}
 }
+
+// A caller reads "all" and "32" out of the same field, so the manifest's
+// mode-or-count is rendered as one string.
+func TestRequestedRendersGPULayersAsOneField(t *testing.T) {
+	byMode := RequestedFrom(manifest.Profile{GPULayers: manifest.GPULayers{Mode: "all"}})
+	if byMode.GPULayers != "all" {
+		t.Fatalf("mode = %q", byMode.GPULayers)
+	}
+	byCount := RequestedFrom(manifest.Profile{GPULayers: manifest.GPULayers{Count: 32}})
+	if byCount.GPULayers != "32" {
+		t.Fatalf("count = %q", byCount.GPULayers)
+	}
+}
+
+// Requested carries the launch flags a backend does not report back, which
+// is the only place they are visible at all.
+func TestRequestedCarriesWhatTheBackendWillNotReport(t *testing.T) {
+	requested := RequestedFrom(manifest.Profile{
+		Context:        manifest.Context{Size: 32768},
+		FlashAttention: true,
+		KVCache:        manifest.KVCache{KeyType: "q8_0", ValueType: "q8_0", Unified: true},
+		Speculation:    manifest.Speculation{Mode: "none"},
+	})
+	if !requested.FlashAttention || requested.KVKeyType != "q8_0" || !requested.KVUnified {
+		t.Fatalf("requested = %#v", requested)
+	}
+	if requested.Context != 32768 {
+		t.Fatalf("context = %d", requested.Context)
+	}
+	if requested.Speculation != "" {
+		t.Fatalf("speculation = %q", requested.Speculation)
+	}
+}

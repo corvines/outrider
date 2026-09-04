@@ -150,6 +150,99 @@ manifest. Weights availability changes at runtime; the roster does not.
 `weights`, `size_bytes`, and `on_disk_bytes` are additive. A client decoding
 only the standard OpenAI fields is unaffected.
 
+## GET /v1/models/{id}
+
+One model, in full. Everything `/v1/models` carries for that entry, plus two
+sections the listing does not: what outrider asked the backend for, and what
+the running backend reports back.
+
+```json
+{
+  "id": "qwen35b-mtp",
+  "object": "model",
+  "owned_by": "outrider",
+  "capabilities": ["completion", "speculation"],
+  "meta": { "n_ctx": 32768, "n_ctx_train": 262144 },
+  "requested": {
+    "n_ctx": 32768,
+    "n_gpu_layers": "all",
+    "flash_attn": true,
+    "kv_key_type": "q4_0",
+    "kv_value_type": "q4_0",
+    "kv_unified": false,
+    "n_batch": 512,
+    "n_ubatch": 256,
+    "mmap": true,
+    "mlock": false,
+    "speculation": "mtp",
+    "sampling": { "temperature": 0.6, "top_p": 0.95, "top_k": 20,
+                  "min_p": 0, "repeat_penalty": 1.05 }
+  },
+  "resolved": {
+    "loaded": true,
+    "endpoint": "http://127.0.0.1:11481",
+    "build": "b10516-b95502ba9",
+    "n_ctx": 32768,
+    "n_ctx_train": 262144,
+    "quantization": "Q4_K - Medium",
+    "model_path": "/Users/x/.cache/outrider/models/...gguf",
+    "n_slots": 1,
+    "modalities": { "vision": false, "audio": false, "video": false },
+    "supports_tools": true,
+    "samplers": ["penalties", "dry", "top_k", "top_p", "min_p", "temperature"],
+    "sampling": { "temperature": 0.6, "top_p": 0.95, "top_k": 20,
+                  "min_p": 0, "repeat_penalty": 1.05 }
+  }
+}
+```
+
+An unknown id returns `404`.
+
+### requested vs resolved
+
+They answer different questions, so they are never merged.
+
+```
+  requested                       resolved
+  ---------                       --------
+  outrider's launch flags         what the process reports about itself
+  always present                  present only while that model is loaded
+  free to read                    read from the backend over HTTP
+```
+
+A caller compares them. `requested.n_ctx` of 32768 against `resolved.n_ctx` of
+16384 says the request was not honoured. Equal values say it was. A `resolved`
+of `{"loaded": false}` says the question has not been answered yet, which is
+different from either.
+
+### What resolved does not carry
+
+The backend does not report back how many layers were offloaded, whether flash
+attention engaged, or which KV cache types are in force. Those appear under
+`requested` only. Treating a requested value as a measurement is the mistake
+this split exists to prevent.
+
+### resolved is a lookup, never a load
+
+The route reports on the model that happens to be running. It does not start
+one to answer, so asking about a model that is not loaded returns:
+
+```json
+{ "loaded": false }
+```
+
+Same answer when the backend cannot describe itself, and when it exposes no way
+to say what is loaded. A model that will not describe itself is reported as not
+described, never as a lookup failure.
+
+### modalities and supports_tools
+
+These two are measured, and they are the reason the route exists. Whether a
+loaded process accepts images, and whether its chat template can call tools,
+cannot be derived from a profile. The static `capabilities` array says what the
+manifest proves; `resolved.modalities` and `resolved.supports_tools` say what
+the loaded process does.
+
 ## Download progress
 
 Downloads emit newline-delimited JSON on stderr:

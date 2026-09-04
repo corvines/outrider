@@ -51,6 +51,7 @@ type Entry struct {
 	MinMemoryMiB    int
 	Speculation     string
 	Capabilities    []string
+	Requested       Requested
 	Weights         Weights
 }
 
@@ -71,6 +72,7 @@ func FromProfile(profile manifest.Profile, weights Weights) Entry {
 		MinMemoryMiB:    profile.Admission.ValidatedPhysicalMemoryMiB,
 		Speculation:     speculationMode(profile),
 		Capabilities:    capabilities(profile),
+		Requested:       RequestedFrom(profile),
 		Weights:         weights,
 	}
 }

@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -195,11 +197,7 @@ func postGatewayJSON(ctx context.Context, url string, payload any) error {
 	request.Header.Set("Content-Type", "application/json")
 	response, err := (&http.Client{Timeout: 30 * time.Minute}).Do(request)
 	if err != nil {
-		if ctx.Err() != nil {
-			return runnerErrorf("Outrider stopped")
-		}
-		message := err.Error()
-		if strings.Contains(message, "EOF") || strings.Contains(message, "connection refused") {
+		if ctx.Err() != nil || gatewayGone(err) {
 			return runnerErrorf("Outrider stopped")
 		}
 		return fmt.Errorf("Outrider gateway closed: %w", err)
@@ -219,6 +217,29 @@ func postGatewayJSON(ctx context.Context, url string, payload any) error {
 		return fmt.Errorf("Outrider returned HTTP %d", response.StatusCode)
 	}
 	return nil
+}
+
+func gatewayGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	message := err.Error()
+	for _, fragment := range []string{
+		"EOF",
+		"connection refused",
+		"connection reset",
+		"broken pipe",
+		"server closed",
+		"use of closed network connection",
+	} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func stopServices(ctx context.Context, environment map[string]string) (serviceStatusOutput, error) {

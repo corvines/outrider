@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -201,17 +202,20 @@ func TestSwitchGatewayModelEmitsLoadingProgress(t *testing.T) {
 }
 
 func TestPostGatewayJSONReportsStoppedWhenServerCloses(t *testing.T) {
-	started := make(chan struct{})
-	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
-		close(started)
-		<-request.Context().Done()
-	}))
-	defer server.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
 	go func() {
-		<-started
-		_ = server.Config.Close()
+		conn, acceptErr := listener.Accept()
+		if acceptErr != nil {
+			return
+		}
+		_ = listener.Close()
+		_ = conn.Close()
 	}()
-	err := postGatewayJSON(context.Background(), server.URL+"/admin/model", map[string]string{"model": "tiny"})
+	err = postGatewayJSON(context.Background(), "http://"+listener.Addr().String()+"/admin/model", map[string]string{"model": "tiny"})
 	if err == nil || !strings.Contains(err.Error(), "Outrider stopped") {
 		t.Fatalf("err = %v", err)
 	}

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"os"
 	"path/filepath"
 
 	"github.com/corvines/outrider/internal/admission"
+	"github.com/corvines/outrider/internal/catalog"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/kvstate"
 	"github.com/corvines/outrider/internal/manifest"
@@ -35,14 +35,19 @@ type profileCacheOutput struct {
 }
 
 type profileSummaryOutput struct {
-	ID          string             `json:"id"`
-	Runnable    bool               `json:"runnable"`
-	Description string             `json:"description"`
-	Model       modelOutput        `json:"model"`
-	SizeBytes   int64              `json:"sizeBytes,omitempty"`
-	Context     int                `json:"context"`
-	MTP         bool               `json:"mtp"`
-	Cache       profileCacheOutput `json:"cache"`
+	ID              string             `json:"id"`
+	Runnable        bool               `json:"runnable"`
+	Dev             bool               `json:"dev,omitempty"`
+	Description     string             `json:"description"`
+	Capabilities    []string           `json:"capabilities"`
+	Model           modelOutput        `json:"model"`
+	SizeBytes       int64              `json:"sizeBytes,omitempty"`
+	Context         int                `json:"context"`
+	TrainingContext int                `json:"trainingContext,omitempty"`
+	MinMemoryMiB    int                `json:"minMemoryMiB,omitempty"`
+	Speculation     string             `json:"speculation,omitempty"`
+	MTP             bool               `json:"mtp"`
+	Cache           profileCacheOutput `json:"cache"`
 }
 
 type profileListOutput struct {
@@ -180,33 +185,39 @@ func newModelOutput(model manifest.Artifact) modelOutput {
 }
 
 func newProfileSummary(profile manifest.Profile, state manifest.StatePaths) (profileSummaryOutput, error) {
-	cache, err := inspectProfileCache(profile, state.Model)
+	weights, err := catalog.InspectWeights(profile, state.Model)
 	if err != nil {
 		return profileSummaryOutput{}, err
 	}
+	return newProfileSummaryFromEntry(catalog.FromProfile(profile, weights)), nil
+}
+
+func newProfileSummaryFromEntry(entry catalog.Entry) profileSummaryOutput {
 	return profileSummaryOutput{
-		ID: profile.ID, Runnable: profile.Runnable, Description: profile.Description,
-		Model: newModelOutput(profile.Model), SizeBytes: profile.Model.SizeBytes, Context: profile.Context.Size,
-		MTP: profile.Speculation.Mode == "mtp", Cache: cache,
-	}, nil
+		ID: entry.ID, Runnable: entry.Runnable, Dev: entry.Dev, Description: entry.Description,
+		Capabilities: entry.Capabilities,
+		Model: modelOutput{
+			Repository: entry.Repo, File: entry.File, Quant: entry.Quant, LocalPath: entry.LocalPath,
+		},
+		SizeBytes: entry.Weights.DeclaredBytes, Context: entry.Context,
+		TrainingContext: entry.TrainingContext, MinMemoryMiB: entry.MinMemoryMiB,
+		Speculation: entry.Speculation, MTP: entry.Speculation == "mtp",
+		Cache: newProfileCache(entry.Weights),
+	}
+}
+
+func newProfileCache(weights catalog.Weights) profileCacheOutput {
+	return profileCacheOutput{
+		State: weights.State, Path: weights.Path, SizeBytes: weights.OnDiskBytes,
+	}
 }
 
 func inspectProfileCache(profile manifest.Profile, path string) (profileCacheOutput, error) {
-	cache := profileCacheOutput{State: "missing", Path: path}
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return cache, nil
-	}
+	weights, err := catalog.InspectWeights(profile, path)
 	if err != nil {
 		return profileCacheOutput{}, err
 	}
-	cache.SizeBytes = info.Size()
-	if !info.Mode().IsRegular() || (profile.Model.SizeBytes > 0 && info.Size() != profile.Model.SizeBytes) {
-		cache.State = "invalid"
-		return cache, nil
-	}
-	cache.State = "present"
-	return cache, nil
+	return newProfileCache(weights), nil
 }
 
 func newUpOutput(session runSession) upOutput {

@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/corvines/outrider/internal/catalog"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
@@ -282,10 +283,6 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	if err != nil {
 		return err
 	}
-	models, err := gatewayModels()
-	if err != nil {
-		return err
-	}
 	state, err := activeState(environment)
 	if err != nil {
 		return err
@@ -300,10 +297,16 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 			forwardProgress(progress)
 		}
 	}
+	models, err := gatewayEntries(state.Root)
+	if err != nil {
+		return err
+	}
 	gateway, err := switcher.New(models, backend, gatewayAvailability(state.Root))
 	if err != nil {
 		return err
 	}
+	build := currentVersion()
+	gateway.Build = switcher.Build{Version: build.Version, Commit: build.Commit}
 	listener, err := net.Listen("tcp", net.JoinHostPort(manifest.DefaultHost, strconv.Itoa(frontPort)))
 	if err != nil {
 		return fmt.Errorf("model switcher cannot listen on 127.0.0.1:%d: %w", frontPort, err)
@@ -539,83 +542,62 @@ func readLogTail(path string, lineCount int) ([]string, error) {
 	return lines, nil
 }
 
-func gatewayModels() ([]switcher.Model, error) {
-	profiles, err := manifest.Offered()
+// gatewayEntries is the catalog every gateway surface renders: the OpenAI
+// listing, the dashboard, and the status response.
+func gatewayEntries(root string) ([]catalog.Entry, error) {
+	entries, err := catalog.Offered(func(profile manifest.Profile) (string, error) {
+		state, err := manifest.Paths(root, profile, "")
+		if err != nil {
+			return "", err
+		}
+		return state.Model, nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	models := make([]switcher.Model, 0, len(profiles))
-	for _, profile := range profiles {
-		if !profile.Runnable {
-			continue
+	runnable := make([]catalog.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Runnable {
+			runnable = append(runnable, entry)
 		}
-		models = append(models, switcher.Model{
-			ID: profile.ID, ContextWindow: profile.Context.Size, TrainingContext: profile.Context.Original,
-			Quantization: profile.Model.Quant,
-		})
 	}
-	return models, nil
+	return runnable, nil
 }
 
 // gatewayAvailability answers /v1/models from the same inspection the
 // dashboard reads, so the two views of what is on disk cannot disagree.
 func gatewayAvailability(root string) switcher.AvailabilityFunc {
-	return func(modelID string) (switcher.Availability, error) {
+	return func(modelID string) (catalog.Weights, error) {
 		profile, err := manifest.Get(modelID)
 		if err != nil {
-			return switcher.Availability{}, err
+			return catalog.Weights{}, err
 		}
 		state, err := manifest.Paths(root, profile, "")
 		if err != nil {
-			return switcher.Availability{}, err
+			return catalog.Weights{}, err
 		}
-		cache, err := inspectProfileCache(profile, state.Model)
-		if err != nil {
-			return switcher.Availability{}, err
-		}
-		available := switcher.Availability{
-			Weights: switcher.WeightsMissing, SizeBytes: profile.Model.SizeBytes,
-		}
-		switch cache.State {
-		case "present":
-			available.Weights = switcher.WeightsPresent
-			available.OnDiskBytes = cache.SizeBytes
-		case "invalid":
-			available.Weights = switcher.WeightsMismatched
-			available.OnDiskBytes = cache.SizeBytes
-		}
-		return available, nil
+		return catalog.InspectWeights(profile, state.Model)
 	}
 }
 
 func gatewayCatalog(root string) ([]gatewayModelStatus, error) {
-	profiles, err := manifest.Offered()
+	entries, err := gatewayEntries(root)
 	if err != nil {
 		return nil, err
 	}
-	models := make([]gatewayModelStatus, 0, len(profiles))
-	for _, profile := range profiles {
-		if !profile.Runnable {
-			continue
-		}
-		state, err := manifest.Paths(root, profile, "")
-		if err != nil {
-			return nil, err
-		}
-		cache, err := inspectProfileCache(profile, state.Model)
-		if err != nil {
-			return nil, err
-		}
-		_, protected := protectedGatewayModels[profile.ID]
-		onDisk := cache.State != "missing"
+	models := make([]gatewayModelStatus, 0, len(entries))
+	for _, entry := range entries {
+		_, protected := protectedGatewayModels[entry.ID]
+		onDisk := entry.Weights.State != catalog.WeightsMissing
 		path := ""
 		if onDisk {
-			path = cache.Path
+			path = entry.Weights.Path
 		}
 		models = append(models, gatewayModelStatus{
-			ID: profile.ID, Context: profile.Context.Size, TrainingContext: profile.Context.Original,
-			Quantization: profile.Model.Quant, SizeBytes: profile.Model.SizeBytes,
-			Cached: cache.State == "present", CanDelete: onDisk, Protected: protected, Path: path,
+			ID: entry.ID, Context: entry.Context, TrainingContext: entry.TrainingContext,
+			Quantization: entry.Quant, SizeBytes: entry.Weights.DeclaredBytes,
+			Cached: entry.Weights.State == catalog.WeightsPresent, CanDelete: onDisk,
+			Protected: protected, Path: path,
 		})
 	}
 	state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")

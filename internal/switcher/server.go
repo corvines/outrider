@@ -9,44 +9,28 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/corvines/outrider/internal/catalog"
 )
 
 const maxRequestBytes = 16 << 20
-
-type Model struct {
-	ID              string
-	ContextWindow   int
-	TrainingContext int
-	Quantization    string
-}
 
 type Backend interface {
 	Ensure(context.Context, string) (string, error)
 }
 
-// Availability reports whether a model's weights are on disk. Weights is
-// "present", "mismatched", or "missing". SizeBytes is the declared download
-// size and is always set; OnDiskBytes is the observed file size and is unset
-// when Weights is "missing".
-type Availability struct {
-	Weights     string
-	SizeBytes   int64
-	OnDiskBytes int64
-}
-
 // AvailabilityFunc answers for one model id. It runs per request so the
 // catalog reflects a download or deletion without a gateway restart.
-type AvailabilityFunc func(modelID string) (Availability, error)
-
-const (
-	WeightsPresent    = "present"
-	WeightsMismatched = "mismatched"
-	WeightsMissing    = "missing"
-)
+type AvailabilityFunc func(modelID string) (catalog.Weights, error)
 
 type Server struct {
-	models       map[string]Model
-	ordered      []Model
+	// Build identifies the binary serving this catalog. A long-running
+	// gateway answers from the catalog compiled into it, so a client that
+	// upgraded the binary needs a way to see it is talking to the old one.
+	Build Build
+
+	models       map[string]catalog.Entry
+	ordered      []catalog.Entry
 	backend      Backend
 	availability AvailabilityFunc
 	client       *http.Client
@@ -54,12 +38,12 @@ type Server struct {
 }
 
 // New builds the switcher. availability may be nil, in which case /v1/models
-// omits the weights fields.
-func New(models []Model, backend Backend, availability AvailabilityFunc) (*Server, error) {
+// reports the weights state carried by the entries themselves.
+func New(models []catalog.Entry, backend Backend, availability AvailabilityFunc) (*Server, error) {
 	if len(models) == 0 {
 		return nil, fmt.Errorf("model switcher requires at least one model")
 	}
-	byID := make(map[string]Model, len(models))
+	byID := make(map[string]catalog.Entry, len(models))
 	for _, model := range models {
 		if strings.TrimSpace(model.ID) == "" {
 			return nil, fmt.Errorf("model switcher received an empty model id")
@@ -70,7 +54,7 @@ func New(models []Model, backend Backend, availability AvailabilityFunc) (*Serve
 		byID[model.ID] = model
 	}
 	return &Server{
-		models: byID, ordered: append([]Model(nil), models...), backend: backend,
+		models: byID, ordered: append([]catalog.Entry(nil), models...), backend: backend,
 		availability: availability, client: http.DefaultClient,
 	}, nil
 }
@@ -86,45 +70,36 @@ func (server *Server) Handler() http.Handler {
 	return mux
 }
 
+// Build identifies the running binary.
+type Build struct {
+	Version string `json:"version,omitempty"`
+	Commit  string `json:"commit,omitempty"`
+}
+
 func (server *Server) health(writer http.ResponseWriter, _ *http.Request) {
-	writeJSON(writer, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(writer, http.StatusOK, struct {
+		Status  string `json:"status"`
+		Version string `json:"version,omitempty"`
+		Commit  string `json:"commit,omitempty"`
+	}{Status: "ok", Version: server.Build.Version, Commit: server.Build.Commit})
 }
 
 func (server *Server) listModels(writer http.ResponseWriter, _ *http.Request) {
-	type meta struct {
-		Context         int `json:"n_ctx"`
-		TrainingContext int `json:"n_ctx_train,omitempty"`
-	}
-	type entry struct {
-		ID           string `json:"id"`
-		Object       string `json:"object"`
-		OwnedBy      string `json:"owned_by"`
-		Quantization string `json:"quantization,omitempty"`
-		Meta         meta   `json:"meta"`
-		Weights      string `json:"weights,omitempty"`
-		SizeBytes    int64  `json:"size_bytes,omitempty"`
-		OnDiskBytes  int64  `json:"on_disk_bytes,omitempty"`
-	}
-	data := make([]entry, 0, len(server.ordered))
+	data := make([]modelEntry, 0, len(server.ordered))
 	for _, model := range server.ordered {
-		item := entry{
-			ID: model.ID, Object: "model", OwnedBy: "outrider", Quantization: model.Quantization,
-			Meta: meta{Context: model.ContextWindow, TrainingContext: model.TrainingContext},
-		}
+		weights := model.Weights
 		if server.availability != nil {
 			// A caller cannot tell an omitted field from a failed lookup, and
 			// reporting "missing" for a model that is on disk would provoke a
 			// needless multi-gigabyte download. Fail the request instead.
-			available, err := server.availability(model.ID)
+			current, err := server.availability(model.ID)
 			if err != nil {
 				writeError(writer, http.StatusInternalServerError, "could not inspect model weights")
 				return
 			}
-			item.Weights = available.Weights
-			item.SizeBytes = available.SizeBytes
-			item.OnDiskBytes = available.OnDiskBytes
+			weights = current
 		}
-		data = append(data, item)
+		data = append(data, newModelEntry(model, weights))
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"object": "list", "data": data})
 }

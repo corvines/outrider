@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -282,7 +283,7 @@ func GetStatus(ctx context.Context, plan manifest.Plan) (Status, error) {
 			Detail: identityMismatchError(*record, *observed).Error(),
 		}, nil
 	}
-	if !recordMatchesPlan(*record, plan) {
+	if !recordServesPlan(*record, plan) {
 		return Status{
 			Kind: StatusMismatched, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint, LogFile: record.LogFile,
 			Detail: planMismatchError(*record, plan).Error(),
@@ -585,9 +586,20 @@ func recordMatchesPlan(record ProcessRecord, plan manifest.Plan) bool {
 	argv := append([]string{plan.Executable}, plan.Args...)
 	return record.Executable == plan.Executable &&
 		record.ArgvSHA256 == ArgvSHA256(argv) &&
-		record.Preset == plan.Profile.ID &&
+		recordServesPlan(record, plan)
+}
+
+// recordServesPlan reports whether a record describes the service the plan
+// asks about, comparing everything except which binary launched it. Reading a
+// status does not require the caller to be that binary: the copy inside the app
+// bundle and one on PATH address the same gateway. The arguments still have to
+// match, so a process running under a different profile stays a mismatch.
+func recordServesPlan(record ProcessRecord, plan manifest.Plan) bool {
+	return record.Preset == plan.Profile.ID &&
 		record.Port == plan.Port &&
-		record.LogFile == plan.State.Log
+		record.LogFile == plan.State.Log &&
+		len(record.Argv) > 0 &&
+		slices.Equal(record.Argv[1:], plan.Args)
 }
 
 func planMismatchError(record ProcessRecord, plan manifest.Plan) error {

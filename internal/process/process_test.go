@@ -636,3 +636,30 @@ func fakePersistentServerPlan(t *testing.T) manifest.Plan {
 	plan.HealthEndpoint = plan.Endpoint + "/health"
 	return plan
 }
+
+// A second Outrider binary, such as the copy on PATH beside the one inside the
+// app bundle, has to see the running gateway rather than call it a mismatch.
+func TestGetStatusAcceptsAnotherExecutableServingTheSamePlan(t *testing.T) {
+	plan := fakeServerPlan(t, false)
+	t.Cleanup(func() { _, _ = Stop(context.Background(), plan, StopOptions{}) })
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	elsewhere := plan
+	elsewhere.Executable = filepath.Join(t.TempDir(), "outrider")
+	status, err := GetStatus(context.Background(), elsewhere)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Kind != StatusRunning || status.PID != started.PID {
+		t.Fatalf("status = %#v", status)
+	}
+	// Starting is still refused: only one process may own the plan.
+	if _, err := Start(context.Background(), elsewhere, StartOptions{}); err == nil ||
+		!strings.Contains(err.Error(), "does not match the requested") {
+		t.Fatalf("start error = %v", err)
+	}
+}

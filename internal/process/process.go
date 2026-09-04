@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/corvines/outrider/internal/endpoint"
+	"github.com/corvines/outrider/internal/kvstate"
 	"github.com/corvines/outrider/internal/manifest"
 )
 
@@ -26,14 +27,15 @@ const (
 )
 
 type Status struct {
-	Kind     StatusKind `json:"kind"`
-	PID      int        `json:"pid,omitempty"`
-	Preset   string     `json:"preset,omitempty"`
-	Endpoint string     `json:"endpoint"`
-	Health   *bool      `json:"health,omitempty"`
-	Detail   string     `json:"detail,omitempty"`
-	LogFile  string     `json:"logFile"`
-	Timings  *Timings   `json:"timings,omitempty"`
+	Kind     StatusKind      `json:"kind"`
+	PID      int             `json:"pid,omitempty"`
+	Preset   string          `json:"preset,omitempty"`
+	Endpoint string          `json:"endpoint"`
+	Health   *bool           `json:"health,omitempty"`
+	Detail   string          `json:"detail,omitempty"`
+	LogFile  string          `json:"logFile"`
+	Timings  *Timings        `json:"timings,omitempty"`
+	Session  *kvstate.Result `json:"session,omitempty"`
 }
 
 type Timings struct {
@@ -45,11 +47,13 @@ type StartOptions struct {
 	HealthTimeout        time.Duration
 	HealthPollInterval   time.Duration
 	HealthRequestTimeout time.Duration
+	SkipSessionRestore   bool
 }
 
 type StopOptions struct {
-	Wait         time.Duration
-	PollInterval time.Duration
+	Wait           time.Duration
+	PollInterval   time.Duration
+	DiscardSession bool
 }
 
 func Start(ctx context.Context, plan manifest.Plan, options StartOptions) (Status, error) {
@@ -116,6 +120,9 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	if err := os.MkdirAll(plan.State.Run, 0o700); err != nil {
 		return Status{}, runnerError("could not create run directory", err)
 	}
+	if err := kvstate.Prepare(sessionConfigFromPlan(plan)); err != nil {
+		return Status{}, err
+	}
 	logFile, err := openRotatingLog(plan.State.Log, serverLogMaxBytes)
 	if err != nil {
 		return Status{}, runnerError("could not open server log", err)
@@ -167,6 +174,9 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 		Executable:       plan.Executable, Command: observed.Command,
 		Argv: argv, ArgvSHA256: ArgvSHA256(argv), Preset: plan.Profile.ID,
 		Port: plan.Port, LogFile: plan.State.Log,
+		SessionEnabled: plan.Session.Enabled, SessionSlot: plan.Session.Slot,
+		SessionKey: plan.Session.Key, SessionDirectory: plan.State.Slots,
+		SessionFilename: plan.Session.Filename,
 	}
 	if err := writeProcessRecord(plan.State.PID, *record); err != nil {
 		_ = command.Process.Kill()
@@ -192,28 +202,37 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 			break
 		}
 		failure := healthFailure(err, plan)
-		if _, cleanupErr := stop(plan, StopOptions{}); cleanupErr != nil {
+		if _, cleanupErr := stop(ctx, plan, StopOptions{DiscardSession: true}); cleanupErr != nil {
 			return Status{}, runnerErrorf("%s; cleanup also failed: %v", failure, cleanupErr)
 		}
 		return Status{}, runnerErrorf("%s", failure)
 	}
 	if err := assertRecordStillOwnsProcess(*record); err != nil {
-		if _, cleanupErr := stop(plan, StopOptions{}); cleanupErr != nil {
+		if _, cleanupErr := stop(ctx, plan, StopOptions{DiscardSession: true}); cleanupErr != nil {
 			return Status{}, runnerErrorf("%v; cleanup also failed: %v", err, cleanupErr)
 		}
 		return Status{}, err
 	}
 	if err := ctx.Err(); err != nil {
-		if _, cleanupErr := stop(plan, StopOptions{}); cleanupErr != nil {
+		if _, cleanupErr := stop(ctx, plan, StopOptions{DiscardSession: true}); cleanupErr != nil {
 			return Status{}, runnerErrorf("runner start aborted: %v; cleanup also failed: %v", err, cleanupErr)
 		}
 		return Status{}, runnerError("runner start aborted", err)
 	}
 	health := true
+	sessionResult := kvstate.Result{Action: "restore", Detail: "skipped"}
+	if !options.SkipSessionRestore {
+		var restoreErr error
+		sessionResult, restoreErr = kvstate.Restore(ctx, plan.Endpoint, sessionConfigFromPlan(plan))
+		if restoreErr != nil {
+			sessionResult = kvstate.Result{Action: "restore", Detail: "failed: " + restoreErr.Error()}
+		}
+	}
 	return Status{
 		Kind: StatusRunning, PID: record.PID, Preset: record.Preset, Endpoint: plan.Endpoint,
 		Health: &health, LogFile: plan.State.Log, Detail: "started",
 		Timings: &Timings{TimeToHealthMS: elapsedMilliseconds(launchStartedAt)},
+		Session: &sessionResult,
 	}, nil
 }
 
@@ -327,7 +346,7 @@ func Stop(ctx context.Context, plan manifest.Plan, options StopOptions) (Status,
 		return Status{}, err
 	}
 	defer lock.Release()
-	return stop(plan, options)
+	return stop(ctx, plan, options)
 }
 
 func StopActive(ctx context.Context, state manifest.StatePaths, options StopOptions) (Status, error) {
@@ -343,10 +362,10 @@ func StopActive(ctx context.Context, state manifest.StatePaths, options StopOpti
 	if record == nil {
 		return Status{Kind: StatusStopped, Detail: "already stopped"}, nil
 	}
-	return stopRecord(state.PID, *record, options)
+	return stopRecord(ctx, state.PID, *record, options)
 }
 
-func stop(plan manifest.Plan, options StopOptions) (Status, error) {
+func stop(ctx context.Context, plan manifest.Plan, options StopOptions) (Status, error) {
 	record, err := ReadProcessRecord(plan.State.PID)
 	if err != nil {
 		return Status{}, err
@@ -356,10 +375,10 @@ func stop(plan manifest.Plan, options StopOptions) (Status, error) {
 			Kind: StatusStopped, Endpoint: plan.Endpoint, LogFile: plan.State.Log, Detail: "already stopped",
 		}, nil
 	}
-	return stopRecord(plan.State.PID, *record, options)
+	return stopRecord(ctx, plan.State.PID, *record, options)
 }
 
-func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (Status, error) {
+func stopRecord(ctx context.Context, recordPath string, record ProcessRecord, options StopOptions) (Status, error) {
 	endpointURL := processEndpoint(record)
 	observed := inspectProcess(record.PID)
 	if observed == nil {
@@ -376,6 +395,17 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 	}
 	if !IdentityMatches(record, *observed) {
 		return Status{}, identityMismatchError(record, *observed)
+	}
+	var sessionResult *kvstate.Result
+	if record.SessionEnabled && !options.DiscardSession {
+		result, err := kvstate.Checkpoint(ctx, endpointURL, sessionConfigFromRecord(record))
+		if err != nil {
+			return Status{}, runnerErrorf(
+				"could not checkpoint persistent KV; leaving PID %d running: %v",
+				record.PID, err,
+			)
+		}
+		sessionResult = &result
 	}
 	if err := sendSignal(record, syscall.SIGTERM); err != nil {
 		return Status{}, err
@@ -396,7 +426,7 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 			if processExists(record.PID) {
 				return Status{}, cannotInspectError(record.PID)
 			}
-			return stoppedAfterRemovingRecord(recordPath, record, "stopped")
+			return stoppedAfterRemovingRecord(recordPath, record, "stopped", sessionResult)
 		}
 		if !IdentityMatches(record, *observed) {
 			return Status{}, identityMismatchError(record, *observed)
@@ -410,7 +440,7 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 		if processExists(record.PID) {
 			return Status{}, cannotInspectError(record.PID)
 		}
-		return stoppedAfterRemovingRecord(recordPath, record, "stopped")
+		return stoppedAfterRemovingRecord(recordPath, record, "stopped", sessionResult)
 	}
 	if !IdentityMatches(record, *observed) {
 		return Status{}, identityMismatchError(record, *observed)
@@ -425,7 +455,9 @@ func stopRecord(recordPath string, record ProcessRecord, options StopOptions) (S
 	if processExists(record.PID) {
 		return Status{}, runnerErrorf("PID %d still exists; leaving %s for inspection", record.PID, recordPath)
 	}
-	return stoppedAfterRemovingRecord(recordPath, record, "stopped with SIGKILL after SIGTERM timeout")
+	return stoppedAfterRemovingRecord(
+		recordPath, record, "stopped with SIGKILL after SIGTERM timeout", sessionResult,
+	)
 }
 
 func sendSignal(record ProcessRecord, signal syscall.Signal) error {
@@ -484,14 +516,34 @@ func waitForProcessObservation(ctx context.Context, pid int) *ObservedProcess {
 	return nil
 }
 
-func stoppedAfterRemovingRecord(recordPath string, record ProcessRecord, detail string) (Status, error) {
+func stoppedAfterRemovingRecord(
+	recordPath string,
+	record ProcessRecord,
+	detail string,
+	session *kvstate.Result,
+) (Status, error) {
 	if err := os.Remove(recordPath); err != nil && !os.IsNotExist(err) {
 		return Status{}, runnerError("could not remove process record", err)
 	}
 	return Status{
 		Kind: StatusStopped, Preset: record.Preset, Endpoint: processEndpoint(record),
 		LogFile: record.LogFile, Detail: detail,
+		Session: session,
 	}, nil
+}
+
+func sessionConfigFromPlan(plan manifest.Plan) kvstate.Config {
+	return kvstate.Config{
+		Enabled: plan.Session.Enabled, Slot: plan.Session.Slot, Key: plan.Session.Key,
+		Directory: plan.State.Slots, Filename: plan.Session.Filename, Profile: plan.Profile.ID,
+	}
+}
+
+func sessionConfigFromRecord(record ProcessRecord) kvstate.Config {
+	return kvstate.Config{
+		Enabled: record.SessionEnabled, Slot: record.SessionSlot, Key: record.SessionKey,
+		Directory: record.SessionDirectory, Filename: record.SessionFilename, Profile: record.Preset,
+	}
 }
 
 func processEndpoint(record ProcessRecord) string {

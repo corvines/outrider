@@ -64,6 +64,7 @@ func BuildServerArgs(profile Profile, options BuildOptions) ([]string, error) {
 		args = append(args, "--checkpoint-min-step", strconv.Itoa(*profile.Memory.CheckpointMinStep))
 	}
 	args = boolFlag(args, profile.Jinja, "--jinja", "--no-jinja")
+	args = append(args, "--chat-template-kwargs", DefaultChatTemplateKwargs)
 	if profile.ChatTemplate != "" {
 		args = append(args, "--chat-template", profile.ChatTemplate)
 	}

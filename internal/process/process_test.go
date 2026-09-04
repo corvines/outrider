@@ -2,6 +2,7 @@ package process
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -59,6 +60,57 @@ func TestStartIsIdempotentAndStopsServer(t *testing.T) {
 	}
 	if status.Kind != StatusStopped {
 		t.Fatalf("final status = %#v", status)
+	}
+}
+
+func TestStartRestoresCheckpointSavedByStop(t *testing.T) {
+	plan := fakePersistentServerPlan(t)
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if started.Session == nil || started.Session.Detail != "no compatible snapshot" {
+		t.Fatalf("first start session = %#v", started.Session)
+	}
+	stopped, err := Stop(context.Background(), plan, StopOptions{
+		Wait: 2 * time.Second, PollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stopped.Session == nil || stopped.Session.Detail != "saved" || stopped.Session.Tokens != 42 {
+		t.Fatalf("stop session = %#v", stopped.Session)
+	}
+	restarted, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = Stop(context.Background(), plan, StopOptions{DiscardSession: true})
+	})
+	if restarted.Session == nil || restarted.Session.Detail != "restored" || restarted.Session.Tokens != 42 {
+		t.Fatalf("restart session = %#v", restarted.Session)
+	}
+}
+
+func TestStartCanSkipSessionRestore(t *testing.T) {
+	plan := fakePersistentServerPlan(t)
+	started, err := Start(context.Background(), plan, StartOptions{
+		HealthTimeout: 3 * time.Second, HealthPollInterval: 25 * time.Millisecond,
+		SkipSessionRestore: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = Stop(context.Background(), plan, StopOptions{DiscardSession: true})
+	})
+	if started.Session == nil || started.Session.Detail != "skipped" {
+		t.Fatalf("start session = %#v", started.Session)
 	}
 }
 
@@ -400,6 +452,7 @@ func TestProcessHelper(t *testing.T) {
 		}
 	}
 	port := ""
+	slotSavePath := ""
 	noHealth := false
 	exitAfterHealth := false
 	loadFailure := false
@@ -415,6 +468,11 @@ func TestProcessHelper(t *testing.T) {
 			i++
 			if i < len(args) {
 				port = args[i]
+			}
+		case "--slot-save-path":
+			i++
+			if i < len(args) {
+				slotSavePath = args[i]
 			}
 		}
 	}
@@ -445,6 +503,36 @@ func TestProcessHelper(t *testing.T) {
 			})
 		}
 	})
+	handler.HandleFunc("/slots/0", func(response http.ResponseWriter, request *http.Request) {
+		if slotSavePath == "" {
+			http.Error(response, "persistence disabled", http.StatusNotFound)
+			return
+		}
+		var body map[string]string
+		if err := json.NewDecoder(request.Body).Decode(&body); err != nil {
+			http.Error(response, err.Error(), http.StatusBadRequest)
+			return
+		}
+		filename := body["filename"]
+		path := filepath.Join(slotSavePath, filename)
+		if request.URL.Query().Get("action") == "save" {
+			if err := os.WriteFile(path, []byte("persistent slot"), 0o600); err != nil {
+				http.Error(response, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(response).Encode(map[string]any{
+				"id_slot": 0, "filename": filename, "n_saved": 42, "n_written": 15,
+			})
+			return
+		}
+		if _, err := os.Stat(path); err != nil {
+			http.Error(response, err.Error(), http.StatusNotFound)
+			return
+		}
+		_ = json.NewEncoder(response).Encode(map[string]any{
+			"id_slot": 0, "filename": filename, "n_restored": 42, "n_read": 15,
+		})
+	})
 	server := &http.Server{Addr: "127.0.0.1:" + port, Handler: handler}
 	if err := server.ListenAndServe(); err != nil {
 		os.Exit(3)
@@ -473,6 +561,7 @@ func fakeServerPlanWithArgs(t *testing.T, helperArgs ...string) manifest.Plan {
 	if err != nil {
 		t.Fatal(err)
 	}
+	profile.Persistence.Enabled = false
 	plan, err := manifest.ResolveCached(profile, manifest.ResolveOptions{
 		Root: t.TempDir(), Executable: os.Args[0], Port: &port,
 	})
@@ -488,6 +577,30 @@ func fakeServerPlanWithArgs(t *testing.T, helperArgs ...string) manifest.Plan {
 		t.Fatal(err)
 	}
 	plan.Endpoint = fmt.Sprintf("http://127.0.0.1:%d", port)
+	plan.HealthEndpoint = plan.Endpoint + "/health"
+	return plan
+}
+
+func fakePersistentServerPlan(t *testing.T) manifest.Plan {
+	t.Helper()
+	plan := fakeServerPlan(t, false)
+	profile, err := manifest.Get("tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.Persistence.Enabled = true
+	plan, err = manifest.ResolveCached(profile, manifest.ResolveOptions{
+		Root: plan.State.Root, Executable: os.Args[0], Port: &plan.Port,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Executable, err = filepath.Abs(os.Args[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Args = append([]string{"-test.run=^TestProcessHelper$", "--"}, plan.Args...)
+	plan.Endpoint = fmt.Sprintf("http://127.0.0.1:%d", plan.Port)
 	plan.HealthEndpoint = plan.Endpoint + "/health"
 	return plan
 }

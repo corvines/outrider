@@ -253,12 +253,25 @@ func TestDevelopmentProfileUsesCachedBlobWithConservativeContext(t *testing.T) {
 	if profile.ID != model.Name || profile.Model.LocalPath != model.Path || profile.Context.Size != 4096 {
 		t.Fatalf("profile = %#v", profile)
 	}
+	if profile.Persistence.Enabled {
+		t.Fatal("development profile inherited persistent session state")
+	}
 	if !containsSequence(profile.ExtraArgs, "--no-webui") {
 		t.Fatalf("extra args = %v", profile.ExtraArgs)
 	}
 	if profile.Sampling.Temperature != temperature || profile.Sampling.TopP != topP ||
 		profile.Sampling.TopK != topK || profile.Sampling.RepeatPenalty != repeatPenalty {
 		t.Fatalf("sampling = %#v", profile.Sampling)
+	}
+}
+
+func TestStopArguments(t *testing.T) {
+	skip, err := parseStopArguments([]string{"--skip-checkpoint"})
+	if err != nil || !skip {
+		t.Fatalf("skip checkpoint = %v, %v", skip, err)
+	}
+	if _, err := parseStopArguments([]string{"tiny"}); err == nil {
+		t.Fatal("stop accepted a profile")
 	}
 }
 

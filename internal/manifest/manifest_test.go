@@ -100,11 +100,12 @@ func TestTinyArguments(t *testing.T) {
 		t.Fatalf("missing disabled speculation: %v", args)
 	}
 	for flag, value := range map[string]string{
-		"--n-gpu-layers":        "all",
-		"--flash-attn":          "on",
-		"--cache-ram":           "512",
-		"--ctx-checkpoints":     "0",
-		"--checkpoint-min-step": "8192",
+		"--n-gpu-layers":         "all",
+		"--flash-attn":           "on",
+		"--chat-template-kwargs": DefaultChatTemplateKwargs,
+		"--cache-ram":            "512",
+		"--ctx-checkpoints":      "0",
+		"--checkpoint-min-step":  "8192",
 	} {
 		if !containsPair(args, flag, value) {
 			t.Fatalf("missing %s %s: %v", flag, value, args)
@@ -192,7 +193,8 @@ func TestLocalModelAndExtraArguments(t *testing.T) {
 func TestRejectsUnsafeExtraArguments(t *testing.T) {
 	profile, _ := Get("tiny")
 	for _, arg := range []string{
-		"--port=9999", "--alias=other", "--model", "--cors-origins=*", "--cors-credentials", "bad\narg",
+		"--port=9999", "--alias=other", "--model", "--cors-origins=*", "--cors-credentials",
+		"--chat-template-kwargs={\"enable_thinking\":true}", "bad\narg",
 	} {
 		profile.ExtraArgs = []string{arg}
 		if err := Validate(profile); err == nil {

@@ -34,7 +34,7 @@ func main() {
 			options.Notice = renderNotice
 		}
 	}
-	if isatty.IsTerminal(os.Stdin.Fd()) {
+	if !jsonOutput && isatty.IsTerminal(os.Stdin.Fd()) {
 		options.Confirm = confirm
 	}
 	output, err := runWithOptions(ctx, arguments, environmentMap(os.Environ()), options)

@@ -266,6 +266,32 @@ func TestUninstallResolvesTheStateRoot(t *testing.T) {
 	}
 }
 
+func TestUninstallInJSONModeNeverPrompts(t *testing.T) {
+	runnerHome := filepath.Join(t.TempDir(), "Outrider")
+	if err := os.MkdirAll(filepath.Join(runnerHome, "models"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	environment := map[string]string{"HOME": t.TempDir(), "OUTRIDER_HOME": runnerHome}
+	installForTest(t, environment)
+	output, err := runWithOptions(
+		context.Background(), []string{"uninstall"}, environment,
+		runOptions{Confirm: nil},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var removed installOutput
+	if err := json.Unmarshal([]byte(output), &removed); err != nil {
+		t.Fatal(err)
+	}
+	if removed.StatePrompted || removed.StateRemoved {
+		t.Fatalf("machine-readable uninstall asked or removed: %#v", removed)
+	}
+	if _, err := os.Stat(runnerHome); err != nil {
+		t.Fatalf("state root removed without an answer: %v", err)
+	}
+}
+
 func TestUninstallReportsAPromptFailure(t *testing.T) {
 	runnerHome := filepath.Join(t.TempDir(), "Outrider")
 	if err := os.MkdirAll(filepath.Join(runnerHome, "models"), 0o755); err != nil {

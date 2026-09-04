@@ -19,6 +19,7 @@ import (
 )
 
 func TestGatewayModelsAdvertiseRunnableProfiles(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	models, err := gatewayModels()
 	if err != nil {
 		t.Fatal(err)
@@ -253,6 +254,7 @@ func TestGatewayHTTPHandlerLoadsRequestedModel(t *testing.T) {
 }
 
 func TestGatewayCatalogReportsProtectedAndCustomModels(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	root := t.TempDir()
 	state, err := activeState(map[string]string{"OUTRIDER_HOME": root})
 	if err != nil {
@@ -298,6 +300,7 @@ func TestGatewayCatalogReportsProtectedAndCustomModels(t *testing.T) {
 }
 
 func TestGatewayDeleteRemovesProtectedDownloadAndKeepsCatalogRow(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	root := t.TempDir()
 	profile := mustGatewayProfile("granite4.2-3b")
 	state, err := manifest.Paths(root, profile, "")
@@ -343,6 +346,7 @@ func TestGatewayDeleteRemovesProtectedDownloadAndKeepsCatalogRow(t *testing.T) {
 }
 
 func TestGatewayCatalogReportsOnDiskPath(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	root := t.TempDir()
 	profile := mustGatewayProfile("granite4.2-3b")
 	state, err := manifest.Paths(root, profile, "")
@@ -371,6 +375,7 @@ func TestGatewayCatalogReportsOnDiskPath(t *testing.T) {
 }
 
 func TestGatewayRevealOpensCachedModel(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	root := t.TempDir()
 	profile := mustGatewayProfile("granite4.2-3b")
 	state, err := manifest.Paths(root, profile, "")

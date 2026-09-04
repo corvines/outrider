@@ -1,6 +1,7 @@
 [
   {
     "id": "tiny",
+    "dev": true,
     "runnable": true,
     "description": "Qwen3.5 0.8B official Q4_0 GGUF for the local smoke proof",
     "model": {
@@ -39,6 +40,7 @@
   },
   {
     "id": "qwen3-1.7b",
+    "dev": true,
     "runnable": true,
     "description": "Qwen3 1.7B Q4_K_M at its native 32K context",
     "model": {
@@ -77,6 +79,7 @@
   },
   {
     "id": "minicpm5-1b",
+    "dev": true,
     "runnable": true,
     "description": "MiniCPM5 1B Q4_K_M as a tiny non-thinking helper experiment",
     "model": {
@@ -115,6 +118,7 @@
   },
   {
     "id": "granite4.2-3b",
+    "dev": true,
     "runnable": true,
     "description": "Granite 4.2 3B Q4_K_M as a non-thinking helper candidate",
     "model": {
@@ -153,6 +157,7 @@
   },
   {
     "id": "ling3-tiny",
+    "dev": true,
     "runnable": true,
     "description": "Ling 3.0 Tiny Q4_K_M as a responsive short-context helper",
     "model": {
@@ -191,6 +196,7 @@
   },
   {
     "id": "qwen35-4b-helper",
+    "dev": true,
     "runnable": true,
     "description": "Qwen3.5 4B Q3_K_M MTP helper at 32K context",
     "model": {
@@ -233,6 +239,7 @@
   },
   {
     "id": "granite4-h-tiny",
+    "dev": true,
     "runnable": true,
     "description": "Granite 4.0 H Tiny Q4_K_M as a fast MoE helper",
     "model": {
@@ -312,7 +319,45 @@
         "admission": { "validatedPhysicalMemoryMiB": 65536 }
   },
   {
+    "id": "qwen35-2b",
+    "runnable": true,
+    "description": "Qwen3.5 2B Q4_K_M helper at 32K context",
+    "model": {
+      "repo": "unsloth/Qwen3.5-2B-GGUF",
+      "file": "Qwen3.5-2B-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+      "sizeBytes": 1280835840
+    },
+    "context": { "size": 32768, "original": 262144 },
+    "gpuLayers": "auto",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
+    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.3,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": { "mode": "none" },
+    "persistence": { "enabled": false },
+    "admission": { "validatedPhysicalMemoryMiB": 8192 }
+  },
+  {
     "id": "gemma4-26b",
+    "dev": true,
     "runnable": true,
     "description": "Gemma 4 26B-A4B official QAT Q4_0 local agent",
     "model": {

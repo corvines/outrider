@@ -19,7 +19,7 @@ func TestProfiles(t *testing.T) {
 		ids = append(ids, profile.ID)
 	}
 	if !reflect.DeepEqual(ids, []string{
-		"tiny", "qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "gemma4-26b",
+		"tiny", "qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-2b", "gemma4-26b",
 	}) {
 		t.Fatalf("profile ids = %v", ids)
 	}
@@ -309,4 +309,59 @@ func containsValue(args []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// The default catalog is the qualified set; the rest are held back behind the
+// development switch so a shipped build cannot offer an unqualified profile.
+func TestOfferedHoldsBackDevelopmentProfiles(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "")
+	offered, err := Offered()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offered) == 0 {
+		t.Fatal("no profiles offered by default")
+	}
+	for _, profile := range offered {
+		if profile.Dev {
+			t.Errorf("%s is a development profile but was offered", profile.ID)
+		}
+	}
+	all, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offered) >= len(all) {
+		t.Fatalf("offered %d of %d profiles, want fewer", len(offered), len(all))
+	}
+}
+
+func TestOfferedIncludesDevelopmentProfilesWhenEnabled(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
+	offered, err := Offered()
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := All()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(offered) != len(all) {
+		t.Fatalf("offered %d profiles, want all %d", len(offered), len(all))
+	}
+}
+
+func TestDevEnabledReadsTheSwitch(t *testing.T) {
+	for _, value := range []string{"1", "true", "yes", "on", "ON", " true "} {
+		t.Setenv("OUTRIDER_DEV", value)
+		if !DevEnabled() {
+			t.Errorf("OUTRIDER_DEV=%q did not enable development profiles", value)
+		}
+	}
+	for _, value := range []string{"", "0", "false", "no", "off"} {
+		t.Setenv("OUTRIDER_DEV", value)
+		if DevEnabled() {
+			t.Errorf("OUTRIDER_DEV=%q enabled development profiles", value)
+		}
+	}
 }

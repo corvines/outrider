@@ -135,7 +135,7 @@ func runWithOptions(
 		if len(argv) != 1 {
 			return "", usageError("ls does not accept arguments")
 		}
-		profiles, err := manifest.All()
+		profiles, err := manifest.Offered()
 		if err != nil {
 			return "", err
 		}
@@ -949,6 +949,11 @@ func runnableProfile(id string) (manifest.Profile, error) {
 	}
 	if !profile.Runnable {
 		return manifest.Profile{}, usageError(fmt.Sprintf("profile %q is plan-only", id))
+	}
+	if profile.Dev && !manifest.DevEnabled() {
+		return manifest.Profile{}, usageError(
+			fmt.Sprintf("profile %q is a development profile; set OUTRIDER_DEV=1 to use it", id),
+		)
 	}
 	return profile, nil
 }

@@ -540,7 +540,7 @@ func readLogTail(path string, lineCount int) ([]string, error) {
 }
 
 func gatewayModels() ([]switcher.Model, error) {
-	profiles, err := manifest.All()
+	profiles, err := manifest.Offered()
 	if err != nil {
 		return nil, err
 	}
@@ -589,7 +589,7 @@ func gatewayAvailability(root string) switcher.AvailabilityFunc {
 }
 
 func gatewayCatalog(root string) ([]gatewayModelStatus, error) {
-	profiles, err := manifest.All()
+	profiles, err := manifest.Offered()
 	if err != nil {
 		return nil, err
 	}

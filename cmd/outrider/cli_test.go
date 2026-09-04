@@ -77,6 +77,7 @@ func TestCheckReturnsStructuredAdmissionWithoutPreparingRuntime(t *testing.T) {
 }
 
 func TestBlockedAdmissionDoesNotPrepareRuntimeOrModel(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -312,6 +313,7 @@ func TestUninstallReportsAPromptFailure(t *testing.T) {
 }
 
 func TestListAndShowProfiles(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "1")
 	root := t.TempDir()
 	ollamaRoot := t.TempDir()
 	writeOllamaFixture(t, ollamaRoot)
@@ -325,7 +327,7 @@ func TestListAndShowProfiles(t *testing.T) {
 	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.Profiles) != 9 {
+	if len(list.Profiles) != 10 {
 		t.Fatalf("profiles = %#v", list.Profiles)
 	}
 	if list.Profiles[0].Cache.State != "missing" {
@@ -535,5 +537,22 @@ func installForTest(t *testing.T, environment map[string]string) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+// Holding a profile out of the catalog is worth little if it can still be
+// served by name, so the switch gates use as well as listing.
+func TestServingADevelopmentProfileIsRefusedWithoutTheSwitch(t *testing.T) {
+	t.Setenv("OUTRIDER_DEV", "")
+	_, err := runnableProfile("tiny")
+	if err == nil {
+		t.Fatal("a development profile was accepted without the switch")
+	}
+	if !strings.Contains(err.Error(), "OUTRIDER_DEV") {
+		t.Errorf("error does not name the switch that unlocks it: %v", err)
+	}
+	t.Setenv("OUTRIDER_DEV", "1")
+	if _, err := runnableProfile("tiny"); err != nil {
+		t.Errorf("development profile refused with the switch on: %v", err)
 	}
 }

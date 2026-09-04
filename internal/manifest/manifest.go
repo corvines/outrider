@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 )
 
@@ -155,6 +156,7 @@ type Speculation struct {
 type Profile struct {
 	ID                string      `json:"id"`
 	Runnable          bool        `json:"runnable"`
+	Dev               bool        `json:"dev,omitempty"`
 	Description       string      `json:"description"`
 	Model             Artifact    `json:"model"`
 	Context           Context     `json:"context"`
@@ -242,6 +244,35 @@ func All() ([]Profile, error) {
 		seen[profiles[i].ID] = struct{}{}
 	}
 	return profiles, nil
+}
+
+// DevEnabled reports whether development profiles are offered, which the
+// OUTRIDER_DEV environment variable turns on.
+func DevEnabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("OUTRIDER_DEV"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// Offered returns the profiles a caller may serve. Development profiles are
+// held back so the default catalog is the set that has been qualified.
+func Offered() ([]Profile, error) {
+	profiles, err := All()
+	if err != nil {
+		return nil, err
+	}
+	if DevEnabled() {
+		return profiles, nil
+	}
+	offered := make([]Profile, 0, len(profiles))
+	for _, profile := range profiles {
+		if !profile.Dev {
+			offered = append(offered, profile)
+		}
+	}
+	return offered, nil
 }
 
 func Get(id string) (Profile, error) {

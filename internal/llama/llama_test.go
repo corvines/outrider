@@ -479,3 +479,86 @@ func bytesSHA256(value []byte) string {
 	digest := sha256.Sum256(value)
 	return hex.EncodeToString(digest[:])
 }
+
+// A profile needing a projector needs both files on disk, so the fetch runs
+// per artifact rather than once for the model.
+func TestEnsureModelCachesEveryArtifact(t *testing.T) {
+	root := t.TempDir()
+	profile, err := manifest.Get("tiny")
+	if err != nil {
+		t.Fatal(err)
+	}
+	model := []byte("GGUF\x00model")
+	projector := []byte("GGUF\x00projector")
+	profile.Model.SHA256 = bytesSHA256(model)
+	profile.MultimodalProject = &manifest.Artifact{
+		Repo: "org/model", File: "mmproj-F16.gguf", Quant: "F16",
+		SHA256: bytesSHA256(projector), SizeBytes: int64(len(projector)),
+	}
+	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: root, Executable: "/fake/llama-server"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fetched := map[string]int{}
+	download := func(_ context.Context, sourceURL string, destination string) error {
+		payload := model
+		if strings.Contains(sourceURL, "mmproj") {
+			payload = projector
+			fetched["projector"]++
+		} else {
+			fetched["model"]++
+		}
+		return os.WriteFile(destination, payload, 0o600)
+	}
+	for range 2 {
+		got, err := EnsureModelCached(context.Background(), profile, plan, EnsureModelOptions{Download: download})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got != plan.State.Model {
+			t.Fatalf("returned path = %q, want the model", got)
+		}
+	}
+	if fetched["model"] != 1 || fetched["projector"] != 1 {
+		t.Fatalf("fetched = %v", fetched)
+	}
+	projectorPath := plan.State.Artifacts[manifest.RoleProjector]
+	contents, err := os.ReadFile(projectorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(contents, projector) {
+		t.Fatalf("projector contents = %q", contents)
+	}
+	if projectorPath == plan.State.Model {
+		t.Fatal("the projector shares the model's cache path")
+	}
+}
+
+// A projector that fails verification fails the run. It is not treated as an
+// optional extra just because the model itself arrived intact.
+func TestEnsureModelRejectsAMismatchedProjector(t *testing.T) {
+	root := t.TempDir()
+	profile, _ := manifest.Get("tiny")
+	model := []byte("GGUF\x00model")
+	profile.Model.SHA256 = bytesSHA256(model)
+	profile.MultimodalProject = &manifest.Artifact{
+		Repo: "org/model", File: "mmproj-F16.gguf", Quant: "F16",
+		SHA256: bytesSHA256([]byte("GGUF\x00expected")), SizeBytes: 16,
+	}
+	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: root, Executable: "/fake/llama-server"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	download := func(_ context.Context, sourceURL string, destination string) error {
+		if strings.Contains(sourceURL, "mmproj") {
+			return os.WriteFile(destination, []byte("GGUF\x00wrong"), 0o600)
+		}
+		return os.WriteFile(destination, model, 0o600)
+	}
+	if _, err := EnsureModelCached(
+		context.Background(), profile, plan, EnsureModelOptions{Download: download},
+	); err == nil {
+		t.Fatal("expected a verification failure")
+	}
+}

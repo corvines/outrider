@@ -35,15 +35,22 @@ type DownloadProgress struct {
 type ProgressFunc func(DownloadProgress)
 
 func ModelDownloadURL(profile manifest.Profile) (string, error) {
-	if profile.Model.Repo == "" || profile.Model.File == "" {
-		return "", runnerErrorf("model reference for %s is incomplete", profile.ID)
+	return ArtifactDownloadURL(profile.Model, profile.ID, manifest.RoleModel)
+}
+
+// ArtifactDownloadURL builds the fetch URL for one of a profile's files. The
+// role names the file in the error, so an incomplete projector does not read
+// as an incomplete model.
+func ArtifactDownloadURL(artifact manifest.Artifact, profileID string, role string) (string, error) {
+	if artifact.Repo == "" || artifact.File == "" {
+		return "", runnerErrorf("%s reference for %s is incomplete", role, profileID)
 	}
-	parts := strings.Split(profile.Model.Repo, "/")
+	parts := strings.Split(artifact.Repo, "/")
 	for i := range parts {
 		parts[i] = url.PathEscape(parts[i])
 	}
 	return "https://huggingface.co/" + strings.Join(parts, "/") +
-		"/resolve/main/" + url.PathEscape(profile.Model.File) + "?download=true", nil
+		"/resolve/main/" + url.PathEscape(artifact.File) + "?download=true", nil
 }
 
 func DownloadFile(ctx context.Context, sourceURL string, destination string) error {

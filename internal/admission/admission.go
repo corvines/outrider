@@ -59,6 +59,9 @@ type Snapshot struct {
 	PortAvailable       bool
 	ModelCached         bool
 	RuntimeCached       bool
+	// UncachedArtifactBytes is what a run must still download: every file the
+	// profile needs that is not already in the cache, not the model alone.
+	UncachedArtifactBytes int64
 }
 
 type Error struct {
@@ -164,10 +167,7 @@ func Evaluate(profile manifest.Profile, plan manifest.Plan, snapshot Snapshot) R
 		NextAction: action(stateResult, "repair ownership and permissions on "+plan.State.Root), class: ClassBlocked,
 	})
 
-	requiredDisk := int64(0)
-	if !snapshot.ModelCached {
-		requiredDisk += profile.Model.SizeBytes
-	}
+	requiredDisk := snapshot.UncachedArtifactBytes
 	if !snapshot.RuntimeCached {
 		requiredDisk += manifest.LlamaRelease.SizeBytes
 	}
@@ -262,6 +262,11 @@ func measure(ctx context.Context, plan manifest.Plan) Snapshot {
 		}
 	}
 	snapshot.ModelCached = regularFile(plan.State.Model)
+	for role, artifact := range plan.Profile.Artifacts() {
+		if !regularFile(plan.State.Artifacts[role]) {
+			snapshot.UncachedArtifactBytes += artifact.SizeBytes
+		}
+	}
 	snapshot.RuntimeCached = regularFile(plan.Executable)
 	snapshot.PortAvailable = portAvailable(plan.Host, plan.Port)
 	snapshot.PhysicalMemoryBytes = commandInt64(ctx, "sysctl", "-n", "hw.memsize")

@@ -160,6 +160,11 @@ func ResolveCached(profile Profile, options ResolveOptions) (Plan, error) {
 		return Plan{}, err
 	}
 	profile.Model.LocalPath = state.Model
+	if profile.MultimodalProject != nil {
+		projector := *profile.MultimodalProject
+		projector.LocalPath = state.Artifacts[RoleProjector]
+		profile.MultimodalProject = &projector
+	}
 	return Resolve(profile, options)
 }
 
@@ -169,18 +174,23 @@ func Paths(root string, profile Profile, cwd string) (StatePaths, error) {
 		return StatePaths{}, err
 	}
 	models := filepath.Join(root, "models")
-	model, err := artifactPath(profile.Model, cwd)
-	if err != nil {
-		return StatePaths{}, err
+	artifacts := make(map[string]string)
+	for role, artifact := range profile.Artifacts() {
+		path, err := artifactPath(artifact, cwd)
+		if err != nil {
+			return StatePaths{}, err
+		}
+		if artifact.LocalPath == "" {
+			path = filepath.Join(models, profile.ID+"-"+artifact.File)
+		}
+		artifacts[role] = path
 	}
-	if profile.Model.LocalPath == "" {
-		model = filepath.Join(models, profile.ID+"-"+profile.Model.File)
-	}
+	model := artifacts[RoleModel]
 	run := filepath.Join(root, "runs", profile.ID)
 	runs := filepath.Join(root, "runs")
 	slots := filepath.Join(root, "sessions")
 	return StatePaths{
-		Root: root, Models: models, Model: model, Run: run,
+		Root: root, Models: models, Model: model, Artifacts: artifacts, Run: run,
 		PID: filepath.Join(runs, "active.json"), Lock: filepath.Join(runs, "lifecycle.lock"),
 		Log:        filepath.Join(run, "server.log"),
 		Executable: filepath.Join(root, "llama.cpp", LlamaRelease.Tag, LlamaRelease.Directory, "llama-server"),

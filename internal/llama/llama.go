@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 
 	"github.com/corvines/outrider/internal/manifest"
 )
@@ -132,39 +133,74 @@ func EnsureModelCached(
 			profile.ID,
 		)
 	}
-	if profile.Model.SHA256 == "" {
-		return "", runnerErrorf("model %s does not declare a SHA-256 digest", profile.ID)
+	artifacts := profile.Artifacts()
+	modelPath := ""
+	for _, role := range sortedRoles(artifacts) {
+		path, err := ensureArtifact(
+			ctx, profile, role, artifacts[role], plan.State.Artifacts[role], options,
+		)
+		if err != nil {
+			return "", err
+		}
+		if role == manifest.RoleModel {
+			modelPath = path
+		}
+	}
+	return modelPath, nil
+}
+
+// sortedRoles fixes the fetch order, so a run downloads the same files in the
+// same sequence every time and its progress output is reproducible.
+func sortedRoles(artifacts map[string]manifest.Artifact) []string {
+	roles := make([]string, 0, len(artifacts))
+	for role := range artifacts {
+		roles = append(roles, role)
+	}
+	sort.Strings(roles)
+	return roles
+}
+
+func ensureArtifact(
+	ctx context.Context,
+	profile manifest.Profile,
+	role string,
+	artifact manifest.Artifact,
+	cachePath string,
+	options EnsureModelOptions,
+) (string, error) {
+	if artifact.SHA256 == "" {
+		return "", runnerErrorf("%s for %s does not declare a SHA-256 digest", role, profile.ID)
 	}
 
-	modelPath, err := filepath.Abs(plan.State.Model)
+	cached, err := filepath.Abs(cachePath)
 	if err != nil {
 		return "", err
 	}
-	exists, err := pathExists(modelPath)
+	exists, err := pathExists(cached)
 	if err != nil {
 		return "", err
 	}
 	if exists {
-		valid, err := isValidGGUF(modelPath)
+		valid, err := isValidGGUF(cached)
 		if err != nil {
 			return "", err
 		}
 		if !valid {
-			cause := runnerErrorf("cached model is not a valid GGUF file: %s", modelPath)
-			return "", quarantineCachedModel(modelPath, cause)
+			cause := runnerErrorf("cached model is not a valid GGUF file: %s", cached)
+			return "", quarantineCachedModel(cached, cause)
 		}
 		if err := verifySHA256WithProgress(
-			ctx, modelPath, profile.Model.SHA256, "cached model", "verify "+profile.ID, options.Progress,
+			ctx, cached, artifact.SHA256, "cached "+role, "verify "+profile.ID, options.Progress,
 		); err != nil {
-			return "", quarantineCachedModel(modelPath, err)
+			return "", quarantineCachedModel(cached, err)
 		}
-		return modelPath, nil
+		return cached, nil
 	}
 
-	if err := os.MkdirAll(filepath.Dir(modelPath), 0o700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cached), 0o700); err != nil {
 		return "", runnerError("could not create model cache", err)
 	}
-	partial := modelPath + ".part"
+	partial := cached + ".part"
 
 	download := options.Download
 	if download == nil {
@@ -172,12 +208,12 @@ func EnsureModelCached(
 			return DownloadFileWithProgress(ctx, sourceURL, destination, options.Progress)
 		}
 	}
-	modelURL, err := ModelDownloadURL(profile)
+	sourceURL, err := ArtifactDownloadURL(artifact, profile.ID, role)
 	if err != nil {
 		return "", err
 	}
-	if err := download(ctx, modelURL, partial); err != nil {
-		return "", runnerError(fmt.Sprintf("could not cache model %s", profile.Model.File), err)
+	if err := download(ctx, sourceURL, partial); err != nil {
+		return "", runnerError(fmt.Sprintf("could not cache %s %s", role, artifact.File), err)
 	}
 	valid, err := isValidGGUF(partial)
 	if err != nil {
@@ -189,16 +225,16 @@ func EnsureModelCached(
 		return "", runnerErrorf("downloaded model is not a valid GGUF file: %s", partial)
 	}
 	if err := verifySHA256WithProgress(
-		ctx, partial, profile.Model.SHA256, "downloaded model", "verify "+profile.ID, options.Progress,
+		ctx, partial, artifact.SHA256, "downloaded "+role, "verify "+profile.ID, options.Progress,
 	); err != nil {
 		_ = os.Remove(partial)
 		_ = os.Remove(resumeMetadataPath(partial))
 		return "", err
 	}
-	if err := os.Rename(partial, modelPath); err != nil {
+	if err := os.Rename(partial, cached); err != nil {
 		return "", runnerError("could not install model in cache", err)
 	}
-	return modelPath, nil
+	return cached, nil
 }
 
 func quarantineCachedModel(modelPath string, cause error) error {

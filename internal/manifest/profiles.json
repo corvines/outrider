@@ -300,6 +300,13 @@
       "contextCheckpoints": 32,
       "checkpointMinStep": 8192
     },
+    "multimodalProject": {
+      "repo": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+      "file": "mmproj-F16.gguf",
+      "quant": "F16",
+      "sha256": "71f3cbc1f7cc0f30d09d41cfa924c0060827ebc33bf15ace7e86661e856f0160",
+      "sizeBytes": 899283584
+    },
     "jinja": true,
     "systemPrompt": "You are a careful, helpful local assistant.",
     "sampling": {
@@ -341,6 +348,13 @@
       "cacheRamMiB": 0,
       "contextCheckpoints": 0,
       "checkpointMinStep": 8192
+    },
+    "multimodalProject": {
+      "repo": "unsloth/Qwen3.5-2B-MTP-GGUF",
+      "file": "mmproj-F16.gguf",
+      "quant": "F16",
+      "sha256": "6385ece50b2c6898e417170867b5a05fb8a0bb1c205f2e7e4e0698e51c0b65c8",
+      "sizeBytes": 668227136
     },
     "jinja": true,
     "systemPrompt": "You are a concise, helpful local assistant.",

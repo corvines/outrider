@@ -178,16 +178,37 @@ type Profile struct {
 	Admission         Admission   `json:"admission"`
 }
 
+// Artifact roles. A profile needs one file per role it declares, and the
+// cache holds them under the same keys.
+const (
+	RoleModel     = "model"
+	RoleProjector = "projector"
+)
+
+// Artifacts is every file the profile needs on disk, keyed by role. The
+// model is always present; the rest depend on what the profile declares.
+func (profile Profile) Artifacts() map[string]Artifact {
+	artifacts := map[string]Artifact{RoleModel: profile.Model}
+	if profile.MultimodalProject != nil {
+		artifacts[RoleProjector] = *profile.MultimodalProject
+	}
+	return artifacts
+}
+
 type StatePaths struct {
-	Root       string `json:"root"`
-	Models     string `json:"models"`
-	Model      string `json:"model"`
-	Run        string `json:"run"`
-	PID        string `json:"pid"`
-	Lock       string `json:"lock"`
-	Log        string `json:"log"`
-	Executable string `json:"executable"`
-	Slots      string `json:"slots"`
+	Root   string `json:"root"`
+	Models string `json:"models"`
+	Model  string `json:"model"`
+	// Artifacts is the cache path of every file the profile needs, keyed by
+	// the same role. Model is the entry for RoleModel, kept as its own field
+	// because callers read it by name.
+	Artifacts  map[string]string `json:"artifacts"`
+	Run        string            `json:"run"`
+	PID        string            `json:"pid"`
+	Lock       string            `json:"lock"`
+	Log        string            `json:"log"`
+	Executable string            `json:"executable"`
+	Slots      string            `json:"slots"`
 }
 
 type SessionState struct {

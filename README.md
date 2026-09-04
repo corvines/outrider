@@ -64,3 +64,9 @@ The app adopts a server that is already running and leaves it alone when you qui
 ### Gatekeeper
 
 The build is signed ad hoc, not notarized, so macOS blocks the first launch with a dialog saying the app cannot be opened. To run it anyway, Control-click the app in Finder, choose Open, then confirm in the dialog. macOS remembers the choice, and later launches open normally.
+
+## Reference
+
+- [Gateway API](docs/gateway-api.md) - the HTTP surface other programs use.
+- [Install marker](docs/install-marker.md) - where an install lands and how it
+  is proved, for anything that has to find the binary itself.

@@ -48,7 +48,7 @@ func TestGatewayPortsReserveAdjacentBackend(t *testing.T) {
 }
 
 func TestGatewayHTTPHandlerReportsStoppedModel(t *testing.T) {
-	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, nil)
+	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestGatewayHTTPHandlerReturnsCurrentRunLogs(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte("first line\nsecond line\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, nil)
+	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +121,7 @@ func TestGatewayHTTPHandlerReportsModelLoading(t *testing.T) {
 		Name: "gemma4-26B_q4_0-it.gguf", Downloaded: 64, Total: 100,
 		BytesPerSecond: 20, ETA: 2 * time.Second,
 	})
-	gateway, err := switcher.New([]switcher.Model{{ID: "gemma4-26b"}}, backend)
+	gateway, err := switcher.New([]switcher.Model{{ID: "gemma4-26b"}}, backend, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +232,7 @@ func (backend *recordingGatewayBackend) Ensure(_ context.Context, modelID string
 
 func TestGatewayHTTPHandlerLoadsRequestedModel(t *testing.T) {
 	backend := &recordingGatewayBackend{}
-	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, backend)
+	gateway, err := switcher.New([]switcher.Model{{ID: "tiny"}}, backend, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,7 +310,7 @@ func TestGatewayDeleteRemovesProtectedDownloadAndKeepsCatalogRow(t *testing.T) {
 	if err := os.WriteFile(state.Model, []byte("gguf"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	gateway, err := switcher.New([]switcher.Model{{ID: profile.ID}}, nil)
+	gateway, err := switcher.New([]switcher.Model{{ID: profile.ID}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -390,7 +390,7 @@ func TestGatewayRevealOpensCachedModel(t *testing.T) {
 		return nil
 	}
 	t.Cleanup(func() { revealInFinder = original })
-	gateway, err := switcher.New([]switcher.Model{{ID: profile.ID}}, nil)
+	gateway, err := switcher.New([]switcher.Model{{ID: profile.ID}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

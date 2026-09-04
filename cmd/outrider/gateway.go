@@ -286,6 +286,10 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 	if err != nil {
 		return err
 	}
+	state, err := activeState(environment)
+	if err != nil {
+		return err
+	}
 	backendEnvironment := cloneEnvironment(environment)
 	backendEnvironment["OUTRIDER_PORT"] = strconv.Itoa(backendPort)
 	backend := &gatewayBackend{environment: backendEnvironment, options: options}
@@ -296,7 +300,7 @@ func runGateway(ctx context.Context, environment map[string]string, options runO
 			forwardProgress(progress)
 		}
 	}
-	gateway, err := switcher.New(models, backend)
+	gateway, err := switcher.New(models, backend, gatewayAvailability(state.Root))
 	if err != nil {
 		return err
 	}
@@ -551,6 +555,37 @@ func gatewayModels() ([]switcher.Model, error) {
 		})
 	}
 	return models, nil
+}
+
+// gatewayAvailability answers /v1/models from the same inspection the
+// dashboard reads, so the two views of what is on disk cannot disagree.
+func gatewayAvailability(root string) switcher.AvailabilityFunc {
+	return func(modelID string) (switcher.Availability, error) {
+		profile, err := manifest.Get(modelID)
+		if err != nil {
+			return switcher.Availability{}, err
+		}
+		state, err := manifest.Paths(root, profile, "")
+		if err != nil {
+			return switcher.Availability{}, err
+		}
+		cache, err := inspectProfileCache(profile, state.Model)
+		if err != nil {
+			return switcher.Availability{}, err
+		}
+		available := switcher.Availability{
+			Weights: switcher.WeightsMissing, SizeBytes: profile.Model.SizeBytes,
+		}
+		switch cache.State {
+		case "present":
+			available.Weights = switcher.WeightsPresent
+			available.OnDiskBytes = cache.SizeBytes
+		case "invalid":
+			available.Weights = switcher.WeightsMismatched
+			available.OnDiskBytes = cache.SizeBytes
+		}
+		return available, nil
+	}
 }
 
 func gatewayCatalog(root string) ([]gatewayModelStatus, error) {

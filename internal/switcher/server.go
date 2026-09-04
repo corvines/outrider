@@ -24,15 +24,38 @@ type Backend interface {
 	Ensure(context.Context, string) (string, error)
 }
 
-type Server struct {
-	models  map[string]Model
-	ordered []Model
-	backend Backend
-	client  *http.Client
-	mu      sync.Mutex
+// Availability reports whether a model's weights are on disk. Weights is
+// "present", "mismatched", or "missing". SizeBytes is the declared download
+// size and is always set; OnDiskBytes is the observed file size and is unset
+// when Weights is "missing".
+type Availability struct {
+	Weights     string
+	SizeBytes   int64
+	OnDiskBytes int64
 }
 
-func New(models []Model, backend Backend) (*Server, error) {
+// AvailabilityFunc answers for one model id. It runs per request so the
+// catalog reflects a download or deletion without a gateway restart.
+type AvailabilityFunc func(modelID string) (Availability, error)
+
+const (
+	WeightsPresent    = "present"
+	WeightsMismatched = "mismatched"
+	WeightsMissing    = "missing"
+)
+
+type Server struct {
+	models       map[string]Model
+	ordered      []Model
+	backend      Backend
+	availability AvailabilityFunc
+	client       *http.Client
+	mu           sync.Mutex
+}
+
+// New builds the switcher. availability may be nil, in which case /v1/models
+// omits the weights fields.
+func New(models []Model, backend Backend, availability AvailabilityFunc) (*Server, error) {
 	if len(models) == 0 {
 		return nil, fmt.Errorf("model switcher requires at least one model")
 	}
@@ -47,7 +70,8 @@ func New(models []Model, backend Backend) (*Server, error) {
 		byID[model.ID] = model
 	}
 	return &Server{
-		models: byID, ordered: append([]Model(nil), models...), backend: backend, client: http.DefaultClient,
+		models: byID, ordered: append([]Model(nil), models...), backend: backend,
+		availability: availability, client: http.DefaultClient,
 	}, nil
 }
 
@@ -77,13 +101,30 @@ func (server *Server) listModels(writer http.ResponseWriter, _ *http.Request) {
 		OwnedBy      string `json:"owned_by"`
 		Quantization string `json:"quantization,omitempty"`
 		Meta         meta   `json:"meta"`
+		Weights      string `json:"weights,omitempty"`
+		SizeBytes    int64  `json:"size_bytes,omitempty"`
+		OnDiskBytes  int64  `json:"on_disk_bytes,omitempty"`
 	}
 	data := make([]entry, 0, len(server.ordered))
 	for _, model := range server.ordered {
-		data = append(data, entry{
+		item := entry{
 			ID: model.ID, Object: "model", OwnedBy: "outrider", Quantization: model.Quantization,
 			Meta: meta{Context: model.ContextWindow, TrainingContext: model.TrainingContext},
-		})
+		}
+		if server.availability != nil {
+			// A caller cannot tell an omitted field from a failed lookup, and
+			// reporting "missing" for a model that is on disk would provoke a
+			// needless multi-gigabyte download. Fail the request instead.
+			available, err := server.availability(model.ID)
+			if err != nil {
+				writeError(writer, http.StatusInternalServerError, "could not inspect model weights")
+				return
+			}
+			item.Weights = available.Weights
+			item.SizeBytes = available.SizeBytes
+			item.OnDiskBytes = available.OnDiskBytes
+		}
+		data = append(data, item)
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"object": "list", "data": data})
 }

@@ -8,7 +8,7 @@
 # belongs to `outrider install`, which this delegates to.
 set -eu
 
-DIST_BASE="${OUTRIDER_DIST_BASE:-https://get.corvines.com/dist}"
+DIST_BASE="${OUTRIDER_DIST_BASE:-https://github.com/corvines/outrider/releases/latest/download}"
 ARCHIVE="outrider_darwin_arm64.tar.gz"
 
 fail() {

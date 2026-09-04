@@ -316,7 +316,7 @@
       "minProbability": 0
     },
     "persistence": { "enabled": false },
-        "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "admission": { "validatedPhysicalMemoryMiB": 32768 }
   },
   {
     "id": "qwen35-2b",

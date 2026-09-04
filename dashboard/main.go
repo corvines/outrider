@@ -5,7 +5,9 @@ import (
 	"embed"
 	"log"
 	"os"
+	"path/filepath"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -32,13 +34,19 @@ func main() {
 		log.Printf("outrider: could not start the local server: %v", err)
 	}
 	cancelStart()
-	defer func() {
-		stopCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-		defer cancel()
-		if err := owner.Stop(stopCtx); err != nil {
-			log.Printf("outrider: could not stop the local server: %v", err)
-		}
-	}()
+	// Quit reaches us through OnShutdown, not through a deferred call: Quit
+	// terminates the application without unwinding main.
+	var stopOnce sync.Once
+	stopGateway := func() {
+		stopOnce.Do(func() {
+			stopCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			if err := owner.Stop(stopCtx); err != nil {
+				log.Printf("outrider: could not stop the local server: %v", err)
+			}
+		})
+	}
+	defer stopGateway()
 
 	app := application.New(application.Options{
 		Name:        "Outrider",
@@ -54,6 +62,8 @@ func main() {
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
+
+	app.OnShutdown(stopGateway)
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "OutriderDashboard",
@@ -87,6 +97,9 @@ func main() {
 	menu.Add("Open Dashboard").OnClick(func(_ *application.Context) {
 		window.Show().Focus()
 	})
+	menu.Add("Install Command Line Tool").OnClick(func(_ *application.Context) {
+		go installCommandLineTool(app, owner)
+	})
 	menu.AddSeparator()
 	menu.Add("Quit Outrider").OnClick(func(_ *application.Context) {
 		app.Quit()
@@ -98,6 +111,25 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Printf("outrider: %v", err)
 	}
+}
+
+func installCommandLineTool(app *application.App, owner *gatewayOwner) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	target, err := owner.InstallCommandLineTool(ctx)
+	if err != nil {
+		log.Printf("outrider: could not install the command line tool: %v", err)
+		app.Dialog.Error().
+			SetTitle("Outrider").
+			SetMessage("Could not install the command line tool.\n\n" + err.Error()).
+			Show()
+		return
+	}
+	app.Dialog.Info().
+		SetTitle("Outrider").
+		SetMessage("Installed the outrider command at " + target +
+			".\n\nAdd " + filepath.Dir(target) + " to PATH if it is not there already.").
+		Show()
 }
 
 func loopbackEndpoint() string {

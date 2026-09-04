@@ -16,6 +16,9 @@ type gatewayOwner struct {
 	lookPath func() (string, error)
 	run      func(ctx context.Context, binary string, args ...string) error
 	healthy  func(ctx context.Context, endpoint string) bool
+	// started records that Ensure launched the gateway. A gateway that was
+	// already serving belongs to whoever started it, so Stop leaves it alone.
+	started bool
 }
 
 func newGatewayOwner(endpoint string) *gatewayOwner {
@@ -38,6 +41,7 @@ func (owner *gatewayOwner) Ensure(ctx context.Context) error {
 	if err := owner.run(ctx, binary, "start"); err != nil {
 		return err
 	}
+	owner.started = true
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(20 * time.Second)
@@ -56,6 +60,9 @@ func (owner *gatewayOwner) Ensure(ctx context.Context) error {
 }
 
 func (owner *gatewayOwner) Stop(ctx context.Context) error {
+	if !owner.started {
+		return nil
+	}
 	binary, err := owner.lookPath()
 	if err != nil {
 		return err
@@ -63,21 +70,32 @@ func (owner *gatewayOwner) Stop(ctx context.Context) error {
 	return owner.run(ctx, binary, "stop")
 }
 
+// resolveOutriderBinary finds the server binary the app should drive. It never
+// searches PATH: a Finder-launched bundle inherits launchd's PATH, which does
+// not contain ~/.local/bin, so a PATH hit would be luck rather than a contract.
+// The bundle ships the binary beside the dashboard executable.
 func resolveOutriderBinary() (string, error) {
 	if override := strings.TrimSpace(os.Getenv("OUTRIDER_BIN")); override != "" {
 		return override, nil
 	}
-	if executable, err := os.Executable(); err == nil {
-		sibling := filepath.Join(filepath.Dir(executable), "outrider")
-		if info, err := os.Stat(sibling); err == nil && !info.IsDir() {
-			return sibling, nil
-		}
-	}
-	binary, err := exec.LookPath("outrider")
+	executable, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("cannot find the Outrider server binary; set OUTRIDER_BIN or install outrider on PATH")
+		return "", fmt.Errorf("cannot locate the dashboard executable: %w", err)
 	}
-	return binary, nil
+	return resolveSiblingBinary(executable)
+}
+
+func resolveSiblingBinary(executable string) (string, error) {
+	directory := filepath.Dir(executable)
+	sibling := filepath.Join(directory, "outrider")
+	info, err := os.Stat(sibling)
+	if err == nil && !info.IsDir() {
+		return sibling, nil
+	}
+	return "", fmt.Errorf(
+		"cannot find the Outrider server binary at %s; set OUTRIDER_BIN to run outside an app bundle",
+		sibling,
+	)
 }
 
 func runOutrider(ctx context.Context, binary string, args ...string) error {
@@ -105,4 +123,31 @@ func gatewayHealthy(ctx context.Context, endpoint string) bool {
 	}
 	defer response.Body.Close()
 	return response.StatusCode >= 200 && response.StatusCode < 300
+}
+
+// InstallCommandLineTool points ~/.local/bin/outrider at the binary the app
+// runs, so a terminal and the app drive the same build. It returns the path it
+// installed. A symlink rather than a copy keeps the two in step when the app is
+// replaced.
+func (owner *gatewayOwner) InstallCommandLineTool(ctx context.Context) (string, error) {
+	binary, err := owner.lookPath()
+	if err != nil {
+		return "", err
+	}
+	target, err := commandLineToolPath()
+	if err != nil {
+		return "", err
+	}
+	if err := owner.run(ctx, binary, "install", "--link"); err != nil {
+		return "", err
+	}
+	return target, nil
+}
+
+func commandLineToolPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("cannot locate the home directory: %w", err)
+	}
+	return filepath.Join(home, ".local", "bin", "outrider"), nil
 }

@@ -9,12 +9,31 @@ vars:
   # by `wails3 build GOOS=...` (or the GOOS env var) for cross-compilation. The
   # tasks below dispatch to the matching platform Taskfile via this variable.
   GOOS: '{{.GOOS | default OS}}'
+  # The shipped bundle. Its directory carries the product name; the executable
+  # inside keeps APP_NAME so it cannot collide with the server binary.
+  BUNDLE_NAME: "Outrider.app"
+  DIST_DIR: "../dist"
 
 includes:
   common: ./build/Taskfile.yml
   darwin: ./build/darwin/Taskfile.yml
 
 tasks:
+  bundle:
+    summary: Builds dist/Outrider.app with the outrider server binary inside it
+    cmds:
+      - task: "{{.GOOS}}:package"
+      - rm -rf "{{.DIST_DIR}}/{{.BUNDLE_NAME}}"
+      - mkdir -p "{{.DIST_DIR}}"
+      - cp -R "{{.BIN_DIR}}/{{.APP_NAME}}.app" "{{.DIST_DIR}}/{{.BUNDLE_NAME}}"
+      # The server binary is named `outrider` and the app binary
+      # `outrider-dashboard`: on a case-insensitive volume one named `Outrider`
+      # would overwrite the other in the same directory.
+      - cd .. && go build -trimpath -o "dist/{{.BUNDLE_NAME}}/Contents/MacOS/outrider" ./cmd/outrider
+      - codesign --force --deep --sign - "{{.DIST_DIR}}/{{.BUNDLE_NAME}}"
+      - codesign --verify --deep --strict "{{.DIST_DIR}}/{{.BUNDLE_NAME}}"
+      - echo "built {{.DIST_DIR}}/{{.BUNDLE_NAME}}"
+
   build:
     summary: Builds the application
     cmds:

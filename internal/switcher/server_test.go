@@ -274,7 +274,7 @@ func TestListModelsAlwaysSendsCapabilities(t *testing.T) {
 // A gateway answers from the catalog compiled into it, so a client that
 // upgraded the binary needs a way to see it is still talking to the old one.
 func TestHealthReportsTheRunningBuild(t *testing.T) {
-	server, err := New([]catalog.Entry{{ID: "tiny"}}, &fakeBackend{}, nil)
+	server, err := New([]catalog.Entry{{ID: "qwen35-0.8b"}}, &fakeBackend{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

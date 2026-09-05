@@ -6,10 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"net"
-	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/corvines/outrider/internal/admission"
@@ -18,7 +15,6 @@ import (
 	"github.com/corvines/outrider/internal/installer"
 	"github.com/corvines/outrider/internal/llama"
 	"github.com/corvines/outrider/internal/manifest"
-	"github.com/corvines/outrider/internal/ollamacache"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 )
 
@@ -39,7 +35,7 @@ const usage = `outrider: loopback llama.cpp runner
   outrider status
   outrider serve [profile]
   outrider run <profile|cached-model>
-  outrider chat [--endpoint URL]
+  outrider chat [--endpoint URL] [--debug]
   outrider smoke
   outrider demo <profile>
   outrider ps
@@ -79,7 +75,7 @@ type runSession struct {
 type runOptions struct {
 	Progress          llama.ProgressFunc
 	Notice            func(string)
-	Chat              func(string) error
+	Chat              func(chat.RunOptions) error
 	CurrentExecutable func() (string, error)
 	Confirm           func(string) (bool, error)
 	Human             bool
@@ -150,17 +146,6 @@ func runWithOptions(
 				return "", err
 			}
 			output.Profiles = append(output.Profiles, summary)
-		}
-		if manifest.DevEnabled() {
-			cacheRoot, rootErr := ollamacache.DefaultRoot(environment["HOME"], environment["OLLAMA_MODELS"])
-			if rootErr != nil {
-				return "", rootErr
-			}
-			discovered, discoverErr := ollamacache.Discover(cacheRoot)
-			if discoverErr != nil {
-				return "", discoverErr
-			}
-			output.DevelopmentModels = discovered
 		}
 		return formatOutput(output, options.Human)
 	case "show":
@@ -266,7 +251,7 @@ func runWithOptions(
 		}
 		return formatOutput(status, options.Human)
 	case "chat":
-		endpoint, err := parseChatArguments(argv[1:])
+		chatOptions, err := parseChatArguments(argv[1:])
 		if err != nil {
 			return "", err
 		}
@@ -274,7 +259,7 @@ func runWithOptions(
 		if runChat == nil {
 			runChat = chat.Run
 		}
-		if err := runChat(endpoint); err != nil {
+		if err := runChat(chatOptions); err != nil {
 			return "", err
 		}
 		return "", nil
@@ -353,7 +338,7 @@ func runWithOptions(
 		if len(argv) != 1 {
 			return "", usageError("smoke does not accept a preset id")
 		}
-		return runDemo(ctx, "tiny", environment, options)
+		return runDemo(ctx, "qwen35-0.8b", environment, options)
 	case "demo":
 		if len(argv) != 2 {
 			return "", usageError("demo expects exactly one runnable profile id")
@@ -511,20 +496,16 @@ func runInteractive(
 	environment map[string]string,
 	options runOptions,
 ) (string, error) {
-	_, nativeErr := manifest.Get(profileID)
-	var session runSession
-	var operationErr error
-	if nativeErr == nil {
-		session, operationErr = startSession(ctx, profileID, environment, options)
-	} else {
-		session, operationErr = startDevelopmentSession(ctx, profileID, environment, options)
+	if _, err := manifest.Get(profileID); err != nil {
+		return "", err
 	}
+	session, operationErr := startSession(ctx, profileID, environment, options)
 	if operationErr == nil {
 		runChat := options.Chat
 		if runChat == nil {
 			runChat = chat.Run
 		}
-		operationErr = runChat(session.Preparation.Plan.Endpoint)
+		operationErr = runChat(chat.RunOptions{Endpoint: session.Preparation.Plan.Endpoint})
 	}
 	cleanupErr := cleanupSession(session, false)
 	if operationErr != nil && cleanupErr != nil {
@@ -536,148 +517,18 @@ func runInteractive(
 	return "", cleanupErr
 }
 
-func startDevelopmentSession(
-	ctx context.Context,
-	name string,
-	environment map[string]string,
-	options runOptions,
-) (runSession, error) {
-	ollamaRoot, err := ollamacache.DefaultRoot(environment["HOME"], environment["OLLAMA_MODELS"])
-	if err != nil {
-		return runSession{}, err
-	}
-	model, found, err := ollamacache.Find(ollamaRoot, name)
-	if err != nil {
-		return runSession{}, err
-	}
-	if !found {
-		return runSession{}, usageError(fmt.Sprintf("unknown profile or development model %q", name))
-	}
-	profile, err := developmentProfile(model)
-	if err != nil {
-		return runSession{}, err
-	}
-	baseState, err := activeState(environment)
-	if err != nil {
-		return runSession{}, err
-	}
-	executable, err := llama.EnsureServer(ctx, llama.EnsureServerOptions{
-		StateRoot: baseState.Root, ExecutableOverride: environment["LLAMA_SERVER_BIN"], Progress: options.Progress,
-	})
-	if err != nil {
-		return runSession{}, err
-	}
-	port, err := availableDevelopmentPort()
-	if err != nil {
-		return runSession{}, err
-	}
-	developmentRoot := filepath.Join(baseState.Root, "development")
-	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{
-		Root: developmentRoot, Executable: executable, Port: &port,
-	})
-	if err != nil {
-		return runSession{}, err
-	}
-	startedAt := time.Now()
-	report := admission.Inspect(ctx, profile, plan, false)
-	if report.Blocking() {
-		return runSession{}, &admission.Error{Report: report}
-	}
-	report = admission.WithRuntimeCapabilities(ctx, report, plan, true)
-	if report.Blocking() {
-		return runSession{}, &admission.Error{Report: report}
-	}
-	if err := ollamacache.Verify(ctx, model, developmentVerifyProgress(options.Progress)); err != nil {
-		return runSession{}, err
-	}
-	status, err := runnerprocess.Start(ctx, plan, runnerprocess.StartOptions{})
-	if err != nil {
-		return runSession{}, err
-	}
-	session := runSession{
-		Preparation: runPreparation{
-			Profile: profile, Plan: plan, Baseline: runnerprocess.Status{Kind: runnerprocess.StatusStopped},
-			Admission: report, StartedAt: startedAt, TotalReadyMS: elapsedMilliseconds(startedAt),
-		},
-		Status: status, OwnsProcess: status.Detail == "started",
-	}
-	if status.Timings != nil {
-		coldStart := status.Timings.TimeToHealthMS
-		session.ColdStartMS = &coldStart
-	}
-	return session, nil
-}
-
-func developmentProfile(model ollamacache.Model) (manifest.Profile, error) {
-	profile, err := manifest.Get("tiny")
-	if err != nil {
-		return manifest.Profile{}, err
-	}
-	profile.ID = model.Name
-	profile.Description = "Development model from the local GGUF cache"
-	profile.Persistence.Enabled = false
-	profile.Model = manifest.Artifact{
-		LocalPath: model.Path, SHA256: strings.TrimPrefix(model.Digest, "sha256:"), SizeBytes: model.SizeBytes,
-	}
-	if parameters := model.Parameters; parameters != nil {
-		if parameters.Temperature != nil {
-			profile.Sampling.Temperature = *parameters.Temperature
-		}
-		if parameters.TopP != nil {
-			profile.Sampling.TopP = *parameters.TopP
-		}
-		if parameters.TopK != nil {
-			profile.Sampling.TopK = *parameters.TopK
-		}
-		if parameters.MinP != nil {
-			profile.Sampling.MinP = *parameters.MinP
-		}
-		if parameters.RepeatPenalty != nil {
-			profile.Sampling.RepeatPenalty = *parameters.RepeatPenalty
-		}
-	}
-	profile.ExtraArgs = append(profile.ExtraArgs, "--no-webui")
-	if err := manifest.Validate(profile); err != nil {
-		return manifest.Profile{}, err
-	}
-	return profile, nil
-}
-
-func availableDevelopmentPort() (int, error) {
-	listener, err := net.Listen("tcp", net.JoinHostPort(manifest.DefaultHost, "0"))
-	if err != nil {
-		return 0, runnerErrorf("could not reserve a development port: %v", err)
-	}
-	port := listener.Addr().(*net.TCPAddr).Port
-	if err := listener.Close(); err != nil {
-		return 0, runnerErrorf("could not release the development port probe: %v", err)
-	}
-	return port, nil
-}
-
-func developmentVerifyProgress(forward llama.ProgressFunc) ollamacache.VerifyProgressFunc {
-	if forward == nil {
-		return nil
-	}
-	return func(progress ollamacache.VerifyProgress) {
-		forward(llama.DownloadProgress{
-			Name: "verify " + progress.Name, Downloaded: progress.Verified, Total: progress.Total,
-			BytesPerSecond: progress.BytesPerSecond, ETA: progress.ETA, Done: progress.Done,
-		})
-	}
-}
-
-func parseChatArguments(arguments []string) (string, error) {
+func parseChatArguments(arguments []string) (chat.RunOptions, error) {
 	flags := flag.NewFlagSet("chat", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	endpoint := flags.String("endpoint", "", "model endpoint")
+	debug := flags.Bool("debug", false, "list models outrider does not manage")
 	if err := flags.Parse(arguments); err != nil {
-		return "", usageError(err.Error())
+		return chat.RunOptions{}, usageError(err.Error())
 	}
 	if flags.NArg() != 0 {
-		return "", usageError("chat accepts only --endpoint URL")
+		return chat.RunOptions{}, usageError("chat accepts only --endpoint URL and --debug")
 	}
-	return *endpoint, nil
+	return chat.RunOptions{Endpoint: *endpoint, Debug: *debug}, nil
 }
 
 func parseStopArguments(arguments []string) (bool, error) {
@@ -752,7 +603,7 @@ func pullProfile(
 }
 
 func activeState(environment map[string]string) (manifest.StatePaths, error) {
-	profile, err := manifest.Get("tiny")
+	profile, err := manifest.Get("qwen35-0.8b")
 	if err != nil {
 		return manifest.StatePaths{}, err
 	}

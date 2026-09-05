@@ -67,6 +67,13 @@ func Stage(binary string, root string) (Marker, error) {
 		_ = os.Remove(target)
 		return Marker{}, err
 	}
+	guidePath, err := rootedPath(root, GuidePath)
+	if err != nil {
+		return Marker{}, err
+	}
+	if err := placeGuide(binary, guidePath); err != nil {
+		return Marker{}, err
+	}
 	return marker, nil
 }
 

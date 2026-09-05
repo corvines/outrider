@@ -19,19 +19,19 @@ func TestProfiles(t *testing.T) {
 		ids = append(ids, profile.ID)
 	}
 	if !reflect.DeepEqual(ids, []string{
-		"tiny", "qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-2b",
+		"qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-0.8b", "qwen35-2b",
 	}) {
 		t.Fatalf("profile ids = %v", ids)
 	}
-	tiny, err := Get("tiny")
+	small, err := Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tiny.Model.Repo != "ggml-org/Qwen3.5-0.8B-GGUF" || tiny.Model.File != "Qwen3.5-0.8B-Q4_0.gguf" {
-		t.Fatalf("unexpected tiny model: %#v", tiny.Model)
+	if small.Model.Repo != "unsloth/Qwen3.5-0.8B-MTP-GGUF" || small.Model.File != "Qwen3.5-0.8B-Q4_K_M.gguf" {
+		t.Fatalf("unexpected model: %#v", small.Model)
 	}
-	if tiny.Persistence.Enabled {
-		t.Fatal("hybrid tiny profile enabled unsupported persistent KV")
+	if small.Persistence.Enabled {
+		t.Fatal("hybrid profile enabled unsupported persistent KV")
 	}
 	qwen, err := Get("qwen3-1.7b")
 	if err != nil {
@@ -81,8 +81,8 @@ func TestProfilesRoundTripJSON(t *testing.T) {
 	}
 }
 
-func TestTinyArguments(t *testing.T) {
-	profile, _ := Get("tiny")
+func TestArgumentsWithoutSpeculation(t *testing.T) {
+	profile, _ := Get("qwen3-1.7b")
 	slots := t.TempDir()
 	args, err := BuildServerArgs(profile, BuildOptions{Port: 23456, SlotSavePath: slots})
 	if err != nil {
@@ -90,10 +90,10 @@ func TestTinyArguments(t *testing.T) {
 	}
 	want := []string{
 		"--host", "127.0.0.1", "--port", "23456",
-		"--alias", "tiny",
+		"--alias", "qwen3-1.7b",
 		"--cors-origins", "https://outrider.invalid", "--no-cors-credentials",
-		"--hf-repo", "ggml-org/Qwen3.5-0.8B-GGUF:Q4_0", "--hf-file", "Qwen3.5-0.8B-Q4_0.gguf",
-		"--ctx-size", "4096",
+		"--hf-repo", "ggml-org/Qwen3-1.7B-GGUF:Q4_K_M", "--hf-file", "Qwen3-1.7B-Q4_K_M.gguf",
+		"--ctx-size", "32768",
 	}
 	if !reflect.DeepEqual(args[:len(want)], want) {
 		t.Fatalf("argument prefix = %v", args[:len(want)])
@@ -174,7 +174,7 @@ func TestQwenArguments(t *testing.T) {
 }
 
 func TestLocalModelAndExtraArguments(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	profile.Model = Artifact{LocalPath: "models/local.gguf", SizeBytes: 1}
 	profile.ExtraArgs = []string{"--verbose", "--log-colors"}
 	cwd := t.TempDir()
@@ -193,7 +193,7 @@ func TestLocalModelAndExtraArguments(t *testing.T) {
 }
 
 func TestRejectsUnsafeExtraArguments(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	for _, arg := range []string{
 		"--port=9999", "--alias=other", "--model", "--cors-origins=*", "--cors-credentials",
 		"--chat-template-kwargs={\"enable_thinking\":true}", "bad\narg",
@@ -206,7 +206,7 @@ func TestRejectsUnsafeExtraArguments(t *testing.T) {
 }
 
 func TestRejectsIncompleteDraftArtifact(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	profile.Speculation = Speculation{Mode: "dflash", Tokens: 2, Draft: &Artifact{Repo: "example/model"}}
 	if err := Validate(profile); err == nil {
 		t.Fatal("accepted incomplete draft artifact")
@@ -214,7 +214,7 @@ func TestRejectsIncompleteDraftArtifact(t *testing.T) {
 }
 
 func TestRejectsInvalidPorts(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	for _, port := range []int{0, 65536} {
 		if _, err := BuildServerArgs(profile, BuildOptions{Port: port, SlotSavePath: t.TempDir()}); err == nil {
 			t.Fatalf("accepted port %d", port)
@@ -223,7 +223,7 @@ func TestRejectsInvalidPorts(t *testing.T) {
 }
 
 func TestReturnsManifestError(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	profile.Context.Size = 0
 	err := Validate(profile)
 	var target *ManifestError
@@ -235,18 +235,18 @@ func TestReturnsManifestError(t *testing.T) {
 	}
 }
 
-func TestTinyModelHasContentHash(t *testing.T) {
-	profile, err := Get("tiny")
+func TestShippedModelHasContentHash(t *testing.T) {
+	profile, err := Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.Model.SHA256 != "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf" {
-		t.Fatalf("tiny model hash = %q", profile.Model.SHA256)
+	if profile.Model.SHA256 != "ac7c9d7a1b3e3695bb3bd50f8ceaa97f9c93e99ccc3d3d1a620301b6dd6d3d86" {
+		t.Fatalf("model hash = %q", profile.Model.SHA256)
 	}
 }
 
 func TestCachedPlanPreservesModelIdentity(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	plan, err := ResolveCached(profile, ResolveOptions{Root: t.TempDir(), Executable: "/fake/llama-server"})
 	if err != nil {
 		t.Fatal(err)
@@ -260,7 +260,7 @@ func TestCachedPlanPreservesModelIdentity(t *testing.T) {
 }
 
 func TestPersistenceRequiresOneSlot(t *testing.T) {
-	profile, _ := Get("tiny")
+	profile, _ := Get("qwen35-0.8b")
 	profile.Persistence.Enabled = true
 	profile.Batch.Parallel = 2
 	if err := Validate(profile); err == nil || !strings.Contains(err.Error(), "one server slot") {

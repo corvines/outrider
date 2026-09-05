@@ -32,7 +32,6 @@ type modelRow struct {
 const (
 	groupOutrider    = "OUTRIDER"
 	groupDevelopment = "DEVELOPMENT CACHE"
-	groupOllama      = "OLLAMA"
 )
 
 type discoveredMsg struct {
@@ -62,9 +61,17 @@ var probeClient = &http.Client{Timeout: 600 * time.Millisecond}
 
 // discoverModels lists what every reachable local server offers, so a row can
 // say where it came from. The configured endpoint is always included.
-func discoverModels(endpoint string, ports []int) tea.Cmd {
+//
+// Only the configured endpoint is read unless debug is set. Every other
+// listener is a dead end: the session cannot switch a server it does not
+// drive, and one of the ports scanned is the gateway's own backend, which
+// would offer the loaded model a second time as if it were a peer.
+func discoverModels(endpoint string, ports []int, debug bool) tea.Cmd {
 	return func() tea.Msg {
-		targets := scanTargets(endpoint, ports)
+		targets := []string{endpoint}
+		if debug {
+			targets = scanTargets(endpoint, ports)
+		}
 		var mu sync.Mutex
 		var rows []modelRow
 		var wg sync.WaitGroup
@@ -145,12 +152,12 @@ func probe(endpoint string) []modelRow {
 }
 
 func sourceGroup(ownedBy string, path string) string {
+	if ownedBy == "outrider" {
+		return groupOutrider
+	}
 	cleanPath := filepath.ToSlash(path)
 	if strings.Contains(cleanPath, "/Library/Caches/Outrider/models/") {
 		return groupOutrider
-	}
-	if ownedBy == "library" {
-		return groupOllama
 	}
 	return groupDevelopment
 }
@@ -175,8 +182,8 @@ func sortModelRows(rows []modelRow) {
 }
 
 func sourceOwner(source string) string {
-	if strings.HasSuffix(source, " ollama") {
-		return "library"
+	if strings.HasSuffix(source, " outrider") {
+		return "outrider"
 	}
 	return ""
 }
@@ -187,25 +194,23 @@ func groupRank(group string) int {
 		return 0
 	case groupDevelopment:
 		return 1
-	case groupOllama:
-		return 2
 	default:
-		return 3
+		return 2
 	}
 }
 
-// sourceLabel names the port and the server software behind it.
+// sourceLabel names the port, and the server software only where Outrider
+// knows it. Anything else is reported as the port alone rather than echoing
+// whatever a third-party server chose to call itself.
 func sourceLabel(endpoint, ownedBy string) string {
 	port := endpointPort(endpoint)
 	switch ownedBy {
+	case "outrider":
+		return port + " outrider"
 	case "llamacpp":
 		return port + " llama.cpp"
-	case "library":
-		return port + " ollama"
-	case "":
-		return port
 	}
-	return port + " " + ownedBy
+	return port
 }
 
 func endpointPort(endpoint string) string {

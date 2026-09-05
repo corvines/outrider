@@ -26,8 +26,11 @@ main() {
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o "$work/outrider" ./cmd/outrider ||
 		fail "build failed"
 
+	cp docs/llms.txt "$work/llms.txt" || fail "could not stage docs/llms.txt"
+
 	mkdir -p "$OUT_DIR"
-	tar -czf "$OUT_DIR/$ARCHIVE" -C "$work" outrider || fail "could not write $OUT_DIR/$ARCHIVE"
+	tar -czf "$OUT_DIR/$ARCHIVE" -C "$work" outrider llms.txt ||
+		fail "could not write $OUT_DIR/$ARCHIVE"
 	(cd "$OUT_DIR" && shasum -a 256 "$ARCHIVE" > SHA256SUMS) || fail "could not write $OUT_DIR/SHA256SUMS"
 
 	echo "built $OUT_DIR/$ARCHIVE"

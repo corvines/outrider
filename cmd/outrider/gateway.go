@@ -617,7 +617,7 @@ func gatewayCatalog(root string) ([]gatewayModelStatus, error) {
 			Protected: protected, Path: path,
 		})
 	}
-	state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
+	state, err := manifest.Paths(root, mustGatewayProfile("qwen35-0.8b"), "")
 	if err != nil {
 		return nil, err
 	}
@@ -672,7 +672,7 @@ func catalogModelFile(root string, modelID string) (string, error) {
 		if strings.ContainsAny(modelID, `/\\`) || strings.Contains(modelID, "..") {
 			return "", fmt.Errorf("invalid custom model id")
 		}
-		state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
+		state, err := manifest.Paths(root, mustGatewayProfile("qwen35-0.8b"), "")
 		if err != nil {
 			return "", err
 		}
@@ -698,7 +698,7 @@ func revealCachedModel(root string, modelID string) error {
 	if err != nil {
 		return err
 	}
-	state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
+	state, err := manifest.Paths(root, mustGatewayProfile("qwen35-0.8b"), "")
 	if err != nil {
 		return err
 	}
@@ -762,7 +762,7 @@ func deleteCustomModel(root string, modelID string) error {
 	if !strings.HasPrefix(modelID, "custom-") || strings.ContainsAny(modelID, `/\\`) || strings.Contains(modelID, "..") {
 		return fmt.Errorf("invalid custom model id")
 	}
-	state, err := manifest.Paths(root, mustGatewayProfile("tiny"), "")
+	state, err := manifest.Paths(root, mustGatewayProfile("qwen35-0.8b"), "")
 	if err != nil {
 		return err
 	}

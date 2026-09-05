@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/corvines/outrider/internal/guide"
 	"github.com/corvines/outrider/internal/installer"
 )
 
@@ -162,6 +163,13 @@ func buildPackage(options buildOptions) (buildResult, error) {
 	if err := copyBinary(options.Binary, prepared); err != nil {
 		return buildResult{}, err
 	}
+	shippedGuide := installer.FindGuide(options.Binary)
+	if shippedGuide == "" {
+		return buildResult{}, fmt.Errorf("no %s found beside %s", guide.Filename, options.Binary)
+	}
+	if err := copyFile(shippedGuide, filepath.Join(workspace, guide.Filename)); err != nil {
+		return buildResult{}, err
+	}
 	identity := options.ApplicationIdentity
 	if identity == "" {
 		identity = "-"
@@ -261,6 +269,14 @@ func diskImageSignArguments(identity string, target string) []string {
 		arguments = append(arguments, "--timestamp")
 	}
 	return append(arguments, target)
+}
+
+func copyFile(source string, destination string) error {
+	contents, err := os.ReadFile(source)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(destination, contents, 0o644)
 }
 
 func copyBinary(source string, destination string) error {

@@ -97,7 +97,7 @@ func TestPinnedServerSupportsProfiles(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []string{"tiny", "qwen35b-mtp"} {
+	for _, id := range []string{"qwen35-0.8b", "qwen35b-mtp"} {
 		profile, err := manifest.Get(id)
 		if err != nil {
 			t.Fatal(err)

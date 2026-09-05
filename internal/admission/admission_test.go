@@ -11,7 +11,7 @@ import (
 )
 
 func TestAdmissionClasses(t *testing.T) {
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35b-mtp")
 	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: t.TempDir(), Executable: "/runtime"})
 	if err != nil {
 		t.Fatal(err)
@@ -58,7 +58,7 @@ func TestAdmissionClasses(t *testing.T) {
 }
 
 func TestRuntimeCapabilityFailureUsesAdmissionContract(t *testing.T) {
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	root := t.TempDir()
 	executable := filepath.Join(root, "llama-server")
 	if err := os.WriteFile(executable, []byte("#!/bin/sh\necho '  --host HOST'\n"), 0o755); err != nil {
@@ -76,7 +76,7 @@ func TestRuntimeCapabilityFailureUsesAdmissionContract(t *testing.T) {
 }
 
 func TestBlockingErrorNamesMeasurementRequirementAndAction(t *testing.T) {
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	plan, _ := manifest.Resolve(profile, manifest.ResolveOptions{Root: t.TempDir(), Executable: "/runtime"})
 	report := Evaluate(profile, plan, Snapshot{
 		OS: "darwin", Arch: "arm64", PhysicalMemoryBytes: 64 * 1024 * 1024 * 1024,

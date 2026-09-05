@@ -8,7 +8,6 @@ import (
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/kvstate"
 	"github.com/corvines/outrider/internal/manifest"
-	"github.com/corvines/outrider/internal/ollamacache"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 )
 
@@ -51,8 +50,7 @@ type profileSummaryOutput struct {
 }
 
 type profileListOutput struct {
-	Profiles          []profileSummaryOutput `json:"profiles"`
-	DevelopmentModels []ollamacache.Model    `json:"developmentModels"`
+	Profiles []profileSummaryOutput `json:"profiles"`
 }
 
 type profileDetailOutput struct {

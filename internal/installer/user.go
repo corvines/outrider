@@ -15,6 +15,7 @@ const (
 type UserLayout struct {
 	Target string
 	Marker string
+	Guide  string
 }
 
 type UserInstallOptions struct {
@@ -35,6 +36,7 @@ func ResolveUserLayout(home string) (UserLayout, error) {
 	return UserLayout{
 		Target: filepath.Join(home, UserTargetRelative),
 		Marker: filepath.Join(home, UserMarkerRelative),
+		Guide:  filepath.Join(home, filepath.FromSlash(UserGuideRelative)),
 	}, nil
 }
 
@@ -94,6 +96,9 @@ func InstallUserWithOptions(binary string, home string, options UserInstallOptio
 		if existing == nil {
 			_ = os.Remove(layout.Target)
 		}
+		return Marker{}, err
+	}
+	if err := placeGuide(binary, layout.Guide); err != nil {
 		return Marker{}, err
 	}
 	return marker, nil
@@ -167,6 +172,9 @@ func UninstallUser(home string) error {
 	}
 	if err := os.Remove(layout.Marker); err != nil {
 		return fmt.Errorf("remove Outrider ownership marker: %w", err)
+	}
+	if err := os.Remove(layout.Guide); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("remove Outrider guide: %w", err)
 	}
 	removeEmptyParents(filepath.Dir(layout.Marker), home)
 	removeEmptyParents(filepath.Dir(layout.Target), home)

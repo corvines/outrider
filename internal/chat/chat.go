@@ -15,22 +15,27 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/corvines/outrider/internal/guide"
 )
 
 const (
 	defaultEndpoint = "http://127.0.0.1:11435"
 	roleUser        = "user"
+	// servedModelHeader is the gateway's answer to which model actually
+	// served a request, which is the only confirmation that a switch took.
+	servedModelHeader = "X-Outrider-Model"
 )
 
 // Run executes the chat TUI.
-func Run(endpoint string) error {
-	if strings.TrimSpace(endpoint) == "" {
-		endpoint = defaultEndpoint
+func Run(opts RunOptions) error {
+	if strings.TrimSpace(opts.Endpoint) == "" {
+		opts.Endpoint = defaultEndpoint
 	}
-	if err := checkEndpoint(endpoint); err != nil {
+	if err := checkEndpoint(opts.Endpoint); err != nil {
 		return err
 	}
-	_, err := tea.NewProgram(New(RunOptions{Endpoint: endpoint})).Run()
+	_, err := tea.NewProgram(New(opts)).Run()
 	if err != nil {
 		return err
 	}
@@ -40,6 +45,9 @@ func Run(endpoint string) error {
 // RunOptions configures a chat session.
 type RunOptions struct {
 	Endpoint string
+	// Debug widens discovery to every model any local server offers,
+	// including ones outrider does not manage.
+	Debug bool
 }
 
 type message struct {
@@ -58,6 +66,10 @@ type completionRequest struct {
 	Model    string           `json:"model"`
 	Messages []requestMessage `json:"messages"`
 	Stream   bool             `json:"stream"`
+	// Help answers are read as fact, so they are taken at the least random
+	// setting the backend offers and with thinking off.
+	Temperature    *float64       `json:"temperature,omitempty"`
+	TemplateKwargs map[string]any `json:"chat_template_kwargs,omitempty"`
 }
 
 type timingsResp struct {
@@ -91,7 +103,7 @@ type endpointUnreachable struct {
 }
 
 func (e endpointUnreachable) Error() string {
-	return fmt.Sprintf("cannot reach endpoint %s\nrun `outrider serve tiny` first", e.url)
+	return fmt.Sprintf("cannot reach endpoint %s\nrun `outrider serve qwen35-0.8b` first", e.url)
 }
 
 func checkEndpoint(endpoint string) error {
@@ -111,6 +123,7 @@ func checkEndpoint(endpoint string) error {
 }
 
 type streamMsg struct {
+	served string
 	chunk  string
 	reason string
 	timing *timingsResp
@@ -125,6 +138,11 @@ type model struct {
 	textarea      textarea.Model
 	rows          []modelRow
 	scanPorts     []int
+	debug         bool
+	pendingSwitch bool
+	mode          chatMode
+	launchCursor  int
+	waitingWord   string
 	currentModel  string
 	quantization  string
 	contextWindow int
@@ -150,9 +168,17 @@ type model struct {
 	promptPerSecond      *float64
 	predictedPerSecond   *float64
 	lastWallMs           int
+	streamStart          time.Time
+	elapsedMs            int
 
 	activityPrefix string
 	reasoningStart time.Time
+
+	// guide is the documentation help mode answers from, read from disk at
+	// startup. guideErr says why it is missing, which is what help mode
+	// reports instead of asking a model to answer without it.
+	guide    string
+	guideErr error
 
 	identityLine string
 	activityLine string
@@ -179,11 +205,15 @@ func New(opts RunOptions) *model {
 	ta.BlurredStyle.Placeholder = styleDim
 	ta.Focus()
 	ta.SetWidth(72)
+	source, guideErr := guide.Load()
 	return &model{
+		guide:         source.Text,
+		guideErr:      guideErr,
 		width:         80,
 		height:        24,
 		endpoint:      opts.Endpoint,
 		scanPorts:     defaultScanPorts,
+		debug:         opts.Debug,
 		textarea:      ta,
 		quantization:  "?",
 		historyIndex:  -1,
@@ -193,7 +223,7 @@ func New(opts RunOptions) *model {
 }
 
 func (m *model) Init() tea.Cmd {
-	return tea.Batch(discoverModels(m.endpoint, m.scanPorts), textarea.Blink)
+	return tea.Batch(discoverModels(m.endpoint, m.scanPorts, m.debug), textarea.Blink)
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -224,6 +254,13 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.rebuildStatus()
 		return m, nil
+	case elapsedTick:
+		if !m.streamActive {
+			return m, nil
+		}
+		m.elapsedMs = int(time.Since(m.streamStart).Milliseconds())
+		m.rebuildStatus()
+		return m, tickElapsed()
 	case streamMsg:
 		return m.applyStreamMsg(x)
 	case tea.KeyMsg:
@@ -242,6 +279,9 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) applyKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.mode == modeUnset {
+		return m.applyLaunchKey(msg)
+	}
 	if m.picker != nil {
 		return m.applyPickerKey(msg)
 	}
@@ -377,7 +417,7 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 		m.promptHistory = append(m.promptHistory, text)
 		parts := strings.Fields(text)
 		if len(parts) == 1 {
-			return tea.Batch(m.openPicker(), discoverModels(m.endpoint, m.scanPorts))
+			return tea.Batch(m.openPicker(), discoverModels(m.endpoint, m.scanPorts, m.debug))
 		}
 		for _, row := range m.rows {
 			if row.id == parts[1] || row.label == parts[1] {
@@ -394,13 +434,20 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 	}
 	m.historyIndex = -1
 
+	if m.mode == modeHelp && m.guide == "" {
+		m.runningError = m.guideErr
+		return nil
+	}
+
 	m.messages = append(m.messages, message{role: "user", content: text})
 	m.messages = append(m.messages, message{role: "assistant", content: ""})
 	m.turns++
 	m.streamActive = true
 	m.streamAborting = false
 	m.lastTurnOutputTokens = 0
-	m.activityPrefix = "Generating"
+	m.activityPrefix = "Loading " + modelLabel(m.currentModel)
+	m.streamStart = time.Now()
+	m.elapsedMs = 0
 	m.runningError = nil
 	m.rebuildStatus()
 	m.rebuildTranscripts()
@@ -411,10 +458,28 @@ func (m *model) submitPrompt(raw string) tea.Cmd {
 	payload := m.completionPayload()
 	endpoint := m.endpoint
 	go m.streamResponse(ctx, endpoint, payload)
-	return func() tea.Msg {
+	return tea.Batch(tickElapsed(), func() tea.Msg {
 		m2 := m
 		return <-m2.streamCh
+	})
+}
+
+// elapsedTick drives the clock on the activity line. Waiting on a model that
+// has not answered yet looks identical to a session that has stopped working,
+// and the difference is the only thing the person wants to know.
+type elapsedTick time.Time
+
+func tickElapsed() tea.Cmd {
+	return tea.Tick(100*time.Millisecond, func(at time.Time) tea.Msg {
+		return elapsedTick(at)
+	})
+}
+
+func formatElapsed(ms int) string {
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
 	}
+	return fmt.Sprintf("%.1fs", float64(ms)/1000)
 }
 
 func (m *model) completionPayload() completionRequest {
@@ -423,6 +488,13 @@ func (m *model) completionPayload() completionRequest {
 	}
 
 	payload := completionRequest{Model: m.currentModel, Stream: true}
+	if m.mode == modeHelp {
+		zero := 0.0
+		payload.Temperature = &zero
+		payload.TemplateKwargs = map[string]any{"enable_thinking": false}
+		payload.Messages = append(payload.Messages,
+			requestMessage{Role: "system", Content: guidePrompt(m.guide)})
+	}
 	for index, msg := range m.messages {
 		if index == len(m.messages)-1 && msg.role == "assistant" && msg.content == "" {
 			continue
@@ -449,6 +521,9 @@ func (m *model) streamResponse(ctx context.Context, endpoint string, payload com
 		return
 	}
 	defer res.Body.Close()
+	if served := res.Header.Get(servedModelHeader); served != "" {
+		m.streamCh <- streamMsg{served: served}
+	}
 	if res.StatusCode >= http.StatusMultipleChoices {
 		body, readErr := io.ReadAll(io.LimitReader(res.Body, 64<<10))
 		if readErr != nil {
@@ -507,6 +582,10 @@ func (m *model) streamResponse(ctx context.Context, endpoint string, payload com
 }
 
 func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
+	if x.served != "" {
+		m.adoptServed(x.served)
+		return m, func() tea.Msg { return <-m.streamCh }
+	}
 	if x.err != nil {
 		m.promptCancel = nil
 		m.streamActive = false
@@ -569,6 +648,7 @@ func (m *model) applyStreamMsg(x streamMsg) (tea.Model, tea.Cmd) {
 		m.streamAborting = false
 		m.activityPrefix = ""
 		m.lastWallMs = x.ms
+		m.elapsedMs = x.ms
 		m.rebuildStatus()
 		m.followBottom()
 		m.streamCh = make(chan streamMsg, 16)
@@ -612,13 +692,40 @@ func (m *model) rebuildStatus() {
 
 	m.identityLine = fmt.Sprintf("%s · %s · ctx %s/%s",
 		ifEmpty(modelLabel(m.currentModel), "?"), ifEmpty(m.quantization, "?"), ctxUsed, ctxWindow)
-	m.activityRest = fmt.Sprintf(" · %s tok/s · %s prompt tok/s", decode, prefill)
+	if m.pendingSwitch {
+		m.identityLine += " · loads on the next message"
+	}
+	m.activityRest = fmt.Sprintf(" · %s · %s tok/s · %s prompt tok/s",
+		formatElapsed(m.elapsedMs), decode, prefill)
 	m.activityLine = strings.TrimPrefix(m.activityRest, " · ")
 	if m.activityPrefix != "" {
 		m.activityLine = "● " + m.activityPrefix + m.activityRest
 	}
 	m.statsLine = fmt.Sprintf("%s · %s · %s output tokens · %s ms",
 		endpointHost(m.endpoint), formatTurns(m.turns), formatInt(m.totalOutputTokens), formatInt(m.lastWallMs))
+}
+
+// adoptServed takes the gateway at its word about which model answered. A
+// request names a model and the gateway loads it, so the reply is the first
+// point at which the switch is a fact rather than a request.
+func (m *model) adoptServed(id string) {
+	m.pendingSwitch = false
+	if m.streamActive && strings.HasPrefix(m.activityPrefix, "Loading") {
+		m.activityPrefix = ifEmpty(m.waitingWord, "Generating")
+	}
+	if id == m.currentModel {
+		m.rebuildStatus()
+		return
+	}
+	m.currentModel = id
+	for _, row := range m.rows {
+		if row.id == id && row.endpoint == m.endpoint {
+			m.quantization = row.quant
+			m.contextWindow = row.ctx
+			break
+		}
+	}
+	m.rebuildStatus()
 }
 
 // selectModel switches the active model and starts the conversation over.
@@ -631,6 +738,9 @@ func (m *model) adoptRow(row modelRow) {
 }
 
 func (m *model) selectModel(row modelRow) tea.Cmd {
+	// The gateway loads a model when a request names it, so a switch on the
+	// endpoint already in use is only promised here, not done.
+	m.pendingSwitch = row.endpoint == m.endpoint && row.id != m.currentModel
 	m.adoptRow(row)
 	m.messages = nil
 	m.turns = 0

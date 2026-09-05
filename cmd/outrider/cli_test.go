@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/corvines/outrider/internal/chat"
 	"github.com/corvines/outrider/internal/manifest"
-	"github.com/corvines/outrider/internal/ollamacache"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 )
 
@@ -20,7 +20,7 @@ func TestPlanPreservesWireShape(t *testing.T) {
 	environment := map[string]string{
 		"OUTRIDER_HOME": t.TempDir(), "LLAMA_SERVER_BIN": "/opt/llama-server", "OUTRIDER_PORT": "12345",
 	}
-	output, err := run(context.Background(), []string{"plan", "tiny"}, environment)
+	output, err := run(context.Background(), []string{"plan", "qwen35-0.8b"}, environment)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,10 +28,10 @@ func TestPlanPreservesWireShape(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &plan); err != nil {
 		t.Fatal(err)
 	}
-	if plan.Preset != "tiny" || plan.Port != 12345 || plan.Executable != "/opt/llama-server" {
+	if plan.Preset != "qwen35-0.8b" || plan.Port != 12345 || plan.Executable != "/opt/llama-server" {
 		t.Fatalf("plan = %#v", plan)
 	}
-	if plan.Model.Repository != "ggml-org/Qwen3.5-0.8B-GGUF" || plan.Model.LocalPath != "" {
+	if plan.Model.Repository != "unsloth/Qwen3.5-0.8B-MTP-GGUF" || plan.Model.LocalPath != "" {
 		t.Fatalf("model = %#v", plan.Model)
 	}
 	if plan.State.ModelCache == "" || plan.State.PIDFile == "" || plan.HealthEndpoint != "http://127.0.0.1:12345/health" {
@@ -60,7 +60,7 @@ func TestPlanIncludesMTPArguments(t *testing.T) {
 
 func TestCheckReturnsStructuredAdmissionWithoutPreparingRuntime(t *testing.T) {
 	root := t.TempDir()
-	output, err := run(context.Background(), []string{"check", "tiny"}, map[string]string{
+	output, err := run(context.Background(), []string{"check", "qwen35-0.8b"}, map[string]string{
 		"OUTRIDER_HOME": root, "LLAMA_SERVER_BIN": "/missing/llama-server",
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func TestCheckReturnsStructuredAdmissionWithoutPreparingRuntime(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &report); err != nil {
 		t.Fatal(err)
 	}
-	if report.Profile != "tiny" || report.Class == "" {
+	if report.Profile != "qwen35-0.8b" || report.Class == "" {
 		t.Fatalf("report = %#v", report)
 	}
 }
@@ -87,7 +87,7 @@ func TestBlockedAdmissionDoesNotPrepareRuntimeOrModel(t *testing.T) {
 	defer listener.Close()
 	root := t.TempDir()
 	port := listener.Addr().(*net.TCPAddr).Port
-	_, err = run(context.Background(), []string{"up", "tiny"}, map[string]string{
+	_, err = run(context.Background(), []string{"up", "qwen35-0.8b"}, map[string]string{
 		"OUTRIDER_HOME": root, "LLAMA_SERVER_BIN": "/missing/llama-server",
 		"OUTRIDER_PORT": fmt.Sprintf("%d", port),
 	})
@@ -149,21 +149,44 @@ func TestLifecycleCommandAliases(t *testing.T) {
 }
 
 func TestChatCommand(t *testing.T) {
-	calledWith := ""
+	var calledWith chat.RunOptions
 	output, err := runWithOptions(
 		context.Background(),
 		[]string{"chat", "--endpoint", "http://127.0.0.1:11436"},
 		map[string]string{},
-		runOptions{Chat: func(endpoint string) error {
-			calledWith = endpoint
+		runOptions{Chat: func(options chat.RunOptions) error {
+			calledWith = options
 			return nil
 		}},
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if output != "" || calledWith != "http://127.0.0.1:11436" {
-		t.Fatalf("output = %q, endpoint = %q", output, calledWith)
+	if output != "" || calledWith.Endpoint != "http://127.0.0.1:11436" {
+		t.Fatalf("output = %q, endpoint = %q", output, calledWith.Endpoint)
+	}
+	if calledWith.Debug {
+		t.Fatal("chat listed unmanaged models without --debug")
+	}
+}
+
+// --debug is what opens discovery to models outrider does not manage.
+func TestChatCommandDebugFlag(t *testing.T) {
+	var calledWith chat.RunOptions
+	_, err := runWithOptions(
+		context.Background(),
+		[]string{"chat", "--debug"},
+		map[string]string{},
+		runOptions{Chat: func(options chat.RunOptions) error {
+			calledWith = options
+			return nil
+		}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !calledWith.Debug {
+		t.Fatal("--debug did not reach the chat session")
 	}
 }
 
@@ -317,10 +340,8 @@ func TestUninstallReportsAPromptFailure(t *testing.T) {
 func TestListAndShowProfiles(t *testing.T) {
 	t.Setenv("OUTRIDER_DEV", "1")
 	root := t.TempDir()
-	ollamaRoot := t.TempDir()
-	writeOllamaFixture(t, ollamaRoot)
 	listJSON, err := run(context.Background(), []string{"ls"}, map[string]string{
-		"OUTRIDER_HOME": root, "OLLAMA_MODELS": ollamaRoot,
+		"OUTRIDER_HOME": root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -335,10 +356,6 @@ func TestListAndShowProfiles(t *testing.T) {
 	if list.Profiles[0].Cache.State != "missing" {
 		t.Fatalf("first cache = %#v", list.Profiles[0].Cache)
 	}
-	if len(list.DevelopmentModels) != 1 || list.DevelopmentModels[0].Name != "granite4.2:8b" {
-		t.Fatalf("development models = %#v", list.DevelopmentModels)
-	}
-
 	showJSON, err := run(context.Background(), []string{"show", "qwen35b-mtp"}, map[string]string{"OUTRIDER_HOME": root})
 	if err != nil {
 		t.Fatal(err)
@@ -354,10 +371,8 @@ func TestListAndShowProfiles(t *testing.T) {
 
 func TestListWithoutDevelopmentEnabled(t *testing.T) {
 	root := t.TempDir()
-	cacheRoot := t.TempDir()
-	writeOllamaFixture(t, cacheRoot)
 	listJSON, err := run(context.Background(), []string{"ls"}, map[string]string{
-		"OUTRIDER_HOME": root, "OLLAMA_MODELS": cacheRoot,
+		"OUTRIDER_HOME": root,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -366,46 +381,17 @@ func TestListWithoutDevelopmentEnabled(t *testing.T) {
 	if err := json.Unmarshal([]byte(listJSON), &list); err != nil {
 		t.Fatal(err)
 	}
-	if len(list.DevelopmentModels) != 0 {
-		t.Fatalf("development models = %#v", list.DevelopmentModels)
-	}
 	ids := make([]string, 0, len(list.Profiles))
 	for _, profile := range list.Profiles {
 		ids = append(ids, profile.ID)
 	}
-	if !reflect.DeepEqual(ids, []string{"qwen35b-mtp", "qwen35-2b"}) {
+	if !reflect.DeepEqual(ids, []string{"qwen35b-mtp", "qwen35-0.8b", "qwen35-2b"}) {
 		t.Fatalf("offered profiles = %v", ids)
 	}
 }
 
-func writeOllamaFixture(t *testing.T, root string) {
-	t.Helper()
-	digest := strings.Repeat("a", 64)
-	blobPath := filepath.Join(root, "blobs", "sha256-"+digest)
-	manifestPath := filepath.Join(
-		root, "manifests", "registry.ollama.ai", "library", "granite4.2", "8b",
-	)
-	if err := os.MkdirAll(filepath.Dir(blobPath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Dir(manifestPath), 0o700); err != nil {
-		t.Fatal(err)
-	}
-	model := []byte("GGUFmodel")
-	if err := os.WriteFile(blobPath, model, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	payload := fmt.Sprintf(
-		`{"layers":[{"mediaType":"application/vnd.ollama.image.model","digest":"sha256:%s","size":%d}]}`,
-		digest, len(model),
-	)
-	if err := os.WriteFile(manifestPath, []byte(payload), 0o600); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestProfileCacheInspection(t *testing.T) {
-	profile, err := manifest.Get("tiny")
+	profile, err := manifest.Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -423,43 +409,12 @@ func TestProfileCacheInspection(t *testing.T) {
 	}
 }
 
-func TestDevelopmentProfileUsesCachedBlobWithConservativeContext(t *testing.T) {
-	temperature := 0.6
-	topP := 0.95
-	topK := 20
-	repeatPenalty := 1.0
-	model := ollamacache.Model{
-		Name: "granite4.2:8b", Digest: "sha256:" + strings.Repeat("a", 64),
-		Path: "/cache/blobs/sha256-model", SizeBytes: 1024,
-		Parameters: &ollamacache.Parameters{
-			Temperature: &temperature, TopP: &topP, TopK: &topK, RepeatPenalty: &repeatPenalty,
-		},
-	}
-	profile, err := developmentProfile(model)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if profile.ID != model.Name || profile.Model.LocalPath != model.Path || profile.Context.Size != 4096 {
-		t.Fatalf("profile = %#v", profile)
-	}
-	if profile.Persistence.Enabled {
-		t.Fatal("development profile inherited persistent session state")
-	}
-	if !containsSequence(profile.ExtraArgs, "--no-webui") {
-		t.Fatalf("extra args = %v", profile.ExtraArgs)
-	}
-	if profile.Sampling.Temperature != temperature || profile.Sampling.TopP != topP ||
-		profile.Sampling.TopK != topK || profile.Sampling.RepeatPenalty != repeatPenalty {
-		t.Fatalf("sampling = %#v", profile.Sampling)
-	}
-}
-
 func TestStopArguments(t *testing.T) {
 	skip, err := parseStopArguments([]string{"--skip-checkpoint"})
 	if err != nil || !skip {
 		t.Fatalf("skip checkpoint = %v, %v", skip, err)
 	}
-	if _, err := parseStopArguments([]string{"tiny"}); err == nil {
+	if _, err := parseStopArguments([]string{"qwen35-0.8b"}); err == nil {
 		t.Fatal("stop accepted a profile")
 	}
 }
@@ -483,13 +438,13 @@ func TestUsageErrors(t *testing.T) {
 		{"run"},
 		{"chat", "unexpected"},
 		{"chat", "--missing"},
-		{"serve", "tiny", "extra"},
-		{"smoke", "tiny"},
+		{"serve", "qwen35-0.8b", "extra"},
+		{"smoke", "qwen35-0.8b"},
 		{"demo"},
-		{"ps", "tiny"},
+		{"ps", "qwen35-0.8b"},
 		{"logs", "extra"},
 		{"stop", "qwen3-1.7b"},
-		{"ps", "tiny", "extra"},
+		{"ps", "qwen35-0.8b", "extra"},
 		{"missing"},
 	} {
 		_, err := run(context.Background(), argv, map[string]string{})
@@ -501,7 +456,7 @@ func TestUsageErrors(t *testing.T) {
 
 func TestRejectsInvalidEnvironmentPort(t *testing.T) {
 	for _, value := range []string{"", "0", "65536", "12.5", "-1", "port"} {
-		_, err := run(context.Background(), []string{"plan", "tiny"}, map[string]string{"OUTRIDER_PORT": value})
+		_, err := run(context.Background(), []string{"plan", "qwen35-0.8b"}, map[string]string{"OUTRIDER_PORT": value})
 		if err == nil || !strings.Contains(err.Error(), "OUTRIDER_PORT") {
 			t.Fatalf("port %q error = %v", value, err)
 		}
@@ -531,8 +486,8 @@ func TestServeUnknownProfileFailsBeforeGateway(t *testing.T) {
 func TestRunOptionsNotice(t *testing.T) {
 	var messages []string
 	options := runOptions{Notice: func(message string) { messages = append(messages, message) }}
-	options.notice("Loading %s...", "tiny")
-	if len(messages) != 1 || messages[0] != "Loading tiny..." {
+	options.notice("Loading %s...", "qwen3-1.7b")
+	if len(messages) != 1 || messages[0] != "Loading qwen3-1.7b..." {
 		t.Fatalf("messages = %#v", messages)
 	}
 	runOptions{}.notice("ignored")
@@ -572,7 +527,7 @@ func installForTest(t *testing.T, environment map[string]string) {
 // served by name, so the switch gates use as well as listing.
 func TestServingADevelopmentProfileIsRefusedWithoutTheSwitch(t *testing.T) {
 	t.Setenv("OUTRIDER_DEV", "")
-	_, err := runnableProfile("tiny")
+	_, err := runnableProfile("qwen3-1.7b")
 	if err == nil {
 		t.Fatal("a development profile was accepted without the switch")
 	}
@@ -580,7 +535,7 @@ func TestServingADevelopmentProfileIsRefusedWithoutTheSwitch(t *testing.T) {
 		t.Errorf("error does not name the switch that unlocks it: %v", err)
 	}
 	t.Setenv("OUTRIDER_DEV", "1")
-	if _, err := runnableProfile("tiny"); err != nil {
+	if _, err := runnableProfile("qwen3-1.7b"); err != nil {
 		t.Errorf("development profile refused with the switch on: %v", err)
 	}
 }

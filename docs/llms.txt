@@ -1,0 +1,119 @@
+# Outrider
+
+Outrider runs a large language model on your own Mac and serves it on
+loopback. This guide is the whole answer surface: if something is not here,
+say you do not know rather than guessing at a command.
+
+## Install and first run [lines=7]
+
+Run `outrider install` to put the binary at `~/.local/bin/outrider`.
+Add `~/.local/bin` to your PATH if the shell cannot find `outrider` afterwards.
+Run `outrider serve qwen35-2b` to start the server and load a small model.
+Run `outrider chat` to open the chat window and start talking to it.
+Run `scripts/chat.sh` to do both in one step: it starts the server if nothing
+is running, then opens chat.
+Run `outrider stop` to shut the model down and free the memory.
+
+## What outrider is and is not [lines=8]
+
+Outrider is a launcher and a switch in front of llama.cpp.
+Outrider requires an Apple silicon Mac; it does not run on Intel or Linux.
+Outrider needs 32 GB of memory to run its largest model.
+Outrider runs its smaller models on 8 GB.
+Outrider is not a model, not a training tool, and not a cloud service.
+Outrider starts no other program on your Mac.
+Outrider can read GGUF files that another program has already downloaded.
+Nothing leaves the machine except the download of the weights themselves.
+
+## Commands [lines=13]
+
+Run `outrider models` to list the models you can run.
+Run `outrider show <profile>` to see one model's settings before running it.
+Run `outrider check <profile>` to ask whether it will fit, without starting it.
+Run `outrider pull <profile>` to download the weights ahead of time.
+Run `outrider serve <profile>` to start the server with that model loaded.
+Run `outrider use <profile>` to swap the loaded model on a running server.
+Run `outrider chat` to open the chat window.
+Run `outrider status` to see whether the server is up and what is loaded.
+Run `outrider logs` to read the model server's output.
+Run `outrider stop` to shut everything down.
+Run `outrider cache clean --apply` to delete downloaded weights you no longer
+want; without `--apply` it only reports what it would remove.
+Run `outrider uninstall` to remove the binary it installed.
+
+## Chat window [lines=13]
+
+Type `/model` to open a picker of the models you can switch to.
+Type `/model <id>` to switch straight to one by name.
+Type `/clear` to start the conversation over with the same model.
+Type `/exit` to leave.
+Those are the only commands the chat window has.
+The chat window asks on startup whether you want to talk to the model or ask
+about outrider. Ask about outrider and it answers from this guide alone.
+Press Ctrl+C once to stop a reply that is still being written.
+Switching models takes effect on your next message, because the server loads
+the new model when that message names it. The status line says so while it
+is still pending, and a large model can take a minute.
+Pass `--debug` to `outrider chat` to also list models on other local servers.
+Those cannot be switched to, so they are hidden by default.
+
+## Models [lines=10]
+
+Three models are offered by default.
+`qwen35-0.8b` is Qwen3.5 0.8B, about 0.5 GB, the smallest and quickest.
+`qwen35-2b` is Qwen3.5 2B, about 1.2 GB, the one to start with.
+`qwen35b-mtp` is Qwen3.6 35B-A3B, about 21 GB, the most capable.
+Pick `qwen35-2b` if your Mac has less than 32 GB of memory.
+All three run at a 32768 token context and all three accept images.
+Set `OUTRIDER_DEV=1` to also offer six smaller development models.
+Outrider has no config file for models.
+You cannot add a model by editing a file on disk.
+Adding a model means changing the source and rebuilding the binary.
+
+## Ports and the HTTP API [lines=11]
+
+Outrider serves on `http://127.0.0.1:11435` by default.
+Set `OUTRIDER_PORT` to move it, and leave the next port up free too, because
+the model server itself listens one port higher.
+POST to `/v1/chat/completions` in the usual OpenAI shape to get an answer.
+Name any model in the request body and outrider loads it for you, stopping
+whatever was loaded before. Only one model runs at a time.
+GET `/v1/models` to list every model, loaded or not.
+GET `/v1/models/<id>` to see what outrider asked for and what the running
+model reports back. Those two halves are kept apart on purpose: the first is
+always there, the second only while the model is loaded.
+GET `/health` to check the server is up.
+
+## Speed and speculation [lines=8]
+
+Speculation makes a model write faster by guessing several tokens at once and
+keeping the guesses that were right. The answer is the same either way.
+`mtp` means the guessing happens inside the model itself, which is what all
+three default models use.
+`ngram` means the guesses come from repeating text already on screen.
+`none` means no guessing.
+The `/props` field named `speculative.types` reports `none` even while `mtp`
+is running, so do not read speculation state from it.
+
+## Images [lines=3]
+
+Send an image to a model that accepts one and it will describe what it sees.
+Do not send it a screenshot expecting it to read the words: the small model
+describes scenes but cannot reliably read text in a picture.
+
+## When a model will not fit [lines=7]
+
+Run `outrider check <profile>` first; it answers before anything starts.
+Pick a smaller model if the check says the memory is not there: `qwen35-2b`
+instead of `qwen35b-mtp`, or `qwen35-0.8b` instead of `qwen35-2b`.
+Close other large applications to free memory, then check again.
+Free disk space if the check names the disk; the weights need room to download.
+Stop whatever is already on the port, or set `OUTRIDER_PORT`, if the check
+names the port.
+
+## Where files live [lines=4]
+
+Weights download to `~/Library/Caches/Outrider/models/`.
+The binary installs to `~/.local/bin/outrider`.
+Set `OUTRIDER_HOME` to move the weights and state somewhere else.
+Set `LLAMA_SERVER_BIN` to point at your own llama-server build.

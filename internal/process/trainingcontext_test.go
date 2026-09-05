@@ -13,7 +13,7 @@ import (
 )
 
 func TestTrainingContextNoteSaysNothingWhenTheyAgree(t *testing.T) {
-	if note := trainingContextNote("tiny", 4096, 4096); note != "" {
+	if note := trainingContextNote("qwen35-0.8b", 4096, 4096); note != "" {
 		t.Fatalf("note = %q, want empty", note)
 	}
 }
@@ -21,14 +21,14 @@ func TestTrainingContextNoteSaysNothingWhenTheyAgree(t *testing.T) {
 // A backend that reports no training context has not answered, which is not
 // the same as agreeing with the profile.
 func TestTrainingContextNoteSaysNothingWithoutAnAnswer(t *testing.T) {
-	if note := trainingContextNote("tiny", 4096, 0); note != "" {
+	if note := trainingContextNote("qwen35-0.8b", 4096, 0); note != "" {
 		t.Fatalf("note = %q, want empty", note)
 	}
 }
 
 func TestTrainingContextNoteNamesBothNumbers(t *testing.T) {
-	note := trainingContextNote("tiny", 4096, 262144)
-	if !strings.Contains(note, "tiny") ||
+	note := trainingContextNote("qwen35-0.8b", 4096, 262144)
+	if !strings.Contains(note, "qwen35-0.8b") ||
 		!strings.Contains(note, "4096") || !strings.Contains(note, "262144") {
 		t.Fatalf("note = %q", note)
 	}
@@ -38,7 +38,7 @@ func TestTrainingContextNoteNamesBothNumbers(t *testing.T) {
 }
 
 func TestTrainingContextNoteReadsTheOtherDirection(t *testing.T) {
-	note := trainingContextNote("tiny", 262144, 4096)
+	note := trainingContextNote("qwen35-0.8b", 262144, 4096)
 	if strings.Contains(note, "caps its own context") {
 		t.Fatalf("over-declaring does not cap anything: %q", note)
 	}
@@ -55,7 +55,7 @@ func TestNoteTrainingContextWritesToTheServerLog(t *testing.T) {
 				_, _ = response.Write([]byte(`{"default_generation_settings":{"n_ctx":4096}}`))
 			case "/v1/models":
 				_, _ = response.Write([]byte(
-					`{"data":[{"id":"tiny","meta":{"n_ctx_train":262144}}]}`))
+					`{"data":[{"id":"qwen35-0.8b","meta":{"n_ctx_train":262144}}]}`))
 			default:
 				http.NotFound(response, request)
 			}
@@ -64,7 +64,7 @@ func TestNoteTrainingContextWritesToTheServerLog(t *testing.T) {
 
 	logPath := filepath.Join(t.TempDir(), "server.log")
 	plan := manifest.Plan{Endpoint: server.URL}
-	plan.Profile.ID = "tiny"
+	plan.Profile.ID = "qwen35-0.8b"
 	plan.Profile.Context.Original = 4096
 	plan.State.Log = logPath
 
@@ -84,7 +84,7 @@ func TestNoteTrainingContextWritesToTheServerLog(t *testing.T) {
 func TestNoteTrainingContextIgnoresAnUnreachableBackend(t *testing.T) {
 	logPath := filepath.Join(t.TempDir(), "server.log")
 	plan := manifest.Plan{Endpoint: "http://127.0.0.1:1"}
-	plan.Profile.ID = "tiny"
+	plan.Profile.ID = "qwen35-0.8b"
 	plan.Profile.Context.Original = 4096
 	plan.State.Log = logPath
 

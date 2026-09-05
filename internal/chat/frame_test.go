@@ -20,6 +20,7 @@ func frameModel() *model {
 func frameModelAt(width, height int) *model {
 	m := New(RunOptions{Endpoint: "http://127.0.0.1:11435"})
 	m.scanPorts = nil
+	m.chooseMode(choiceFor(modeChat))
 	m.width, m.height = width, height
 	m.textarea.SetWidth(m.composerInnerWidth())
 	m.currentModel, m.quantization, m.contextWindow = "qwen35b-mtp", "Q4_K_M", 32768
@@ -28,8 +29,8 @@ func frameModelAt(width, height int) *model {
 			source: ":11435 llama.cpp", group: groupDevelopment, quant: "Q4_0", ctx: 4096},
 		{id: "qwen35b-mtp", label: "qwen35b-mtp", endpoint: m.endpoint,
 			source: ":11435 llama.cpp", group: groupOutrider, quant: "Q4_K_M", ctx: 32768},
-		{id: "tiny", label: "tiny", endpoint: "http://127.0.0.1:11434",
-			source: ":11434 ollama", group: groupOllama, quant: "", ctx: 0},
+		{id: "qwen35-0.8b", label: "qwen35-0.8b", endpoint: "http://127.0.0.1:11434",
+			source: ":11434", group: groupDevelopment, quant: "", ctx: 0},
 	}
 	m.messages = []message{
 		{role: roleUser, content: "write a haiku on oranges"},
@@ -107,14 +108,13 @@ func TestPickerRowsReadWithoutColor(t *testing.T) {
 	}
 }
 
-func TestPickerGroupsOutriderBeforeDevelopmentAndOllama(t *testing.T) {
+func TestPickerGroupsOutriderBeforeDevelopment(t *testing.T) {
 	m := frameModelAt(120, 40)
 	m.openPicker()
 	plain := ansi.ReplaceAllString(m.View(), "")
 	outRider := strings.Index(plain, groupOutrider)
 	development := strings.Index(plain, groupDevelopment)
-	ollama := strings.Index(plain, groupOllama)
-	if outRider < 0 || development < outRider || ollama < development {
+	if outRider < 0 || development < outRider {
 		t.Fatalf("picker groups are not ordered:\n%s", plain)
 	}
 }
@@ -158,7 +158,7 @@ func TestPickerRowsNameTheirSource(t *testing.T) {
 	plain := ansi.ReplaceAllString(m.View(), "")
 	for _, want := range []string{
 		"llama-3.2-3b", "Q4_0", "4k", ":11435 llama.cpp",
-		"tiny", ":11434 ollama",
+		"qwen35-0.8b", ":11434",
 	} {
 		if !strings.Contains(plain, want) {
 			t.Errorf("the picker table is missing %q:\n%s", want, plain)
@@ -170,7 +170,7 @@ func TestPickerKeepsSourceWhenNarrow(t *testing.T) {
 	m := frameModelAt(56, 18)
 	m.openPicker()
 	plain := ansi.ReplaceAllString(m.View(), "")
-	if !strings.Contains(plain, "ollama") {
+	if !strings.Contains(plain, "llama.cpp") {
 		t.Errorf("a narrow picker dropped the source column:\n%s", plain)
 	}
 }
@@ -190,7 +190,7 @@ func TestShortQuant(t *testing.T) {
 }
 
 func TestWrapHardBreaksAPathWithNoSpaces(t *testing.T) {
-	text := "*1  :11434 ollama  ~/.ollama/models/blobs/sha256-16a9369d0805f80b7377d25d87f937a90c05dc04ad79173a52001e42c9aab311"
+	text := "*1  :11435 llama.cpp  ~/Library/Caches/Outrider/models/blobs/sha256-16a9369d0805f80b7377d25d87f937a90c05dc04ad79173a52001e42c9aab311"
 	lines := wrapHard(text, 44, 4)
 	if len(lines) < 3 {
 		t.Fatalf("a 115 character entry did not wrap: %q", lines)
@@ -200,7 +200,7 @@ func TestWrapHardBreaksAPathWithNoSpaces(t *testing.T) {
 			t.Errorf("line is %d wide, panel is 44: %q", lipgloss.Width(line), line)
 		}
 	}
-	if !strings.HasPrefix(lines[0], "*1  :11434 ollama") {
+	if !strings.HasPrefix(lines[0], "*1  :11435 llama.cpp") {
 		t.Errorf("the marker and server were not kept together: %q", lines[0])
 	}
 	for _, line := range lines[1:] {
@@ -218,12 +218,12 @@ func TestPickerFootnotesEverySource(t *testing.T) {
 	m := frameModelAt(120, 40)
 	m.openPicker()
 	frame := ansi.ReplaceAllString(m.View(), "")
-	for _, want := range []string{"*1", "*2", ":11434 ollama", ":11435 llama.cpp"} {
+	for _, want := range []string{"*1", "*2", ":11434", ":11435 llama.cpp"} {
 		if !strings.Contains(frame, want) {
 			t.Errorf("the picker never showed %q:\n%s", want, frame)
 		}
 	}
-	if strings.Count(frame, ":11434 ollama") != 1 {
+	if strings.Count(frame, ":11435 llama.cpp") != 1 {
 		t.Errorf("the server name repeated instead of being footnoted:\n%s", frame)
 	}
 }

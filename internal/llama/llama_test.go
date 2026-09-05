@@ -41,12 +41,13 @@ func TestEnsureServerUsesExecutableOverride(t *testing.T) {
 
 func TestEnsureModelDownloadsOnceAndVerifiesCache(t *testing.T) {
 	root := t.TempDir()
-	profile, err := manifest.Get("tiny")
+	profile, err := manifest.Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}
 	model := []byte("GGUF\x00test")
 	profile.Model.SHA256 = bytesSHA256(model)
+	profile.MultimodalProject.SHA256 = bytesSHA256(model)
 	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: root, Executable: "/fake/llama-server"})
 	if err != nil {
 		t.Fatal(err)
@@ -65,7 +66,7 @@ func TestEnsureModelDownloadsOnceAndVerifiesCache(t *testing.T) {
 			t.Fatalf("model path = %q", got)
 		}
 	}
-	if downloads != 1 {
+	if downloads != 2 {
 		t.Fatalf("downloads = %d", downloads)
 	}
 	contents, err := os.ReadFile(plan.State.Model)
@@ -79,14 +80,14 @@ func TestEnsureModelDownloadsOnceAndVerifiesCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(modelURL, "/ggml-org/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_0.gguf") {
+	if !strings.Contains(modelURL, "/unsloth/Qwen3.5-0.8B-MTP-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf") {
 		t.Fatalf("model URL = %q", modelURL)
 	}
 }
 
 func TestEnsureModelRejectsMismatchedCachedContent(t *testing.T) {
 	root := t.TempDir()
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: root, Executable: "/fake/llama-server"})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +137,7 @@ func TestVerifySHA256ReportsProgress(t *testing.T) {
 
 func TestEnsureModelRejectsMismatchedDownloadAndCleansPartial(t *testing.T) {
 	root := t.TempDir()
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	plan, err := manifest.Resolve(profile, manifest.ResolveOptions{Root: root, Executable: "/fake/llama-server"})
 	if err != nil {
 		t.Fatal(err)
@@ -484,7 +485,7 @@ func bytesSHA256(value []byte) string {
 // per artifact rather than once for the model.
 func TestEnsureModelCachesEveryArtifact(t *testing.T) {
 	root := t.TempDir()
-	profile, err := manifest.Get("tiny")
+	profile, err := manifest.Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -539,7 +540,7 @@ func TestEnsureModelCachesEveryArtifact(t *testing.T) {
 // optional extra just because the model itself arrived intact.
 func TestEnsureModelRejectsAMismatchedProjector(t *testing.T) {
 	root := t.TempDir()
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	model := []byte("GGUF\x00model")
 	profile.Model.SHA256 = bytesSHA256(model)
 	profile.MultimodalProject = &manifest.Artifact{

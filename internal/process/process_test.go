@@ -185,7 +185,7 @@ func TestConcurrentStartsLaunchOneProcess(t *testing.T) {
 }
 
 func TestStopRefusesMismatchedProcessIdentity(t *testing.T) {
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	plan, err := manifest.ResolveCached(profile, manifest.ResolveOptions{
 		Root: t.TempDir(), Executable: os.Args[0],
 	})
@@ -201,7 +201,7 @@ func TestStopRefusesMismatchedProcessIdentity(t *testing.T) {
 		StartedAt:        time.Now().UTC().Format(time.RFC3339Nano),
 		ProcessStartedAt: "not-the-current-process", Executable: os.Args[0],
 		Command: "not-the-current-process", Argv: argv, ArgvSHA256: ArgvSHA256(argv),
-		Preset: "tiny", Port: plan.Port, LogFile: plan.State.Log,
+		Preset: "qwen35-0.8b", Port: plan.Port, LogFile: plan.State.Log,
 	}
 	if err := writeProcessRecord(plan.State.PID, record); err != nil {
 		t.Fatal(err)
@@ -432,7 +432,7 @@ func TestServerLogRotationIsBounded(t *testing.T) {
 }
 
 func TestStatusRepairsDeadActiveRecord(t *testing.T) {
-	profile, _ := manifest.Get("tiny")
+	profile, _ := manifest.Get("qwen35-0.8b")
 	plan, err := manifest.ResolveCached(profile, manifest.ResolveOptions{
 		Root: t.TempDir(), Executable: os.Args[0],
 	})
@@ -447,7 +447,7 @@ func TestStatusRepairsDeadActiveRecord(t *testing.T) {
 		SchemaVersion: ProcessRecordSchemaVersion, PID: 999999,
 		StartedAt: time.Now().UTC().Format(time.RFC3339Nano), ProcessStartedAt: "not-running",
 		Executable: os.Args[0], Command: "not-running", Argv: argv, ArgvSHA256: ArgvSHA256(argv),
-		Preset: "tiny", Port: plan.Port, LogFile: plan.State.Log,
+		Preset: "qwen35-0.8b", Port: plan.Port, LogFile: plan.State.Log,
 	}
 	if err := writeProcessRecord(plan.State.PID, record); err != nil {
 		t.Fatal(err)
@@ -589,7 +589,7 @@ func fakeServerPlanWithArgs(t *testing.T, helperArgs ...string) manifest.Plan {
 	if err := listener.Close(); err != nil {
 		t.Fatal(err)
 	}
-	profile, err := manifest.Get("tiny")
+	profile, err := manifest.Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -616,7 +616,7 @@ func fakeServerPlanWithArgs(t *testing.T, helperArgs ...string) manifest.Plan {
 func fakePersistentServerPlan(t *testing.T) manifest.Plan {
 	t.Helper()
 	plan := fakeServerPlan(t, false)
-	profile, err := manifest.Get("tiny")
+	profile, err := manifest.Get("qwen35-0.8b")
 	if err != nil {
 		t.Fatal(err)
 	}

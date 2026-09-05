@@ -91,6 +91,6 @@ func slotServer(t *testing.T, directory string) *httptest.Server {
 func testConfig(directory string, key string) Config {
 	return Config{
 		Enabled: true, Slot: 0, Key: key, Directory: directory,
-		Filename: "slot-" + key + ".bin", Profile: "tiny",
+		Filename: "slot-" + key + ".bin", Profile: "qwen35-0.8b",
 	}
 }

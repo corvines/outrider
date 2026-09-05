@@ -22,6 +22,9 @@ func newStreamingServer(chunks []string, includeTimings bool) *httptest.Server {
 			return
 		}
 		if strings.HasSuffix(r.URL.Path, "/v1/chat/completions") {
+			// The gateway names what served the request on every reply, so a
+			// fake that omits it exercises a path production never takes.
+			w.Header().Set(servedModelHeader, "qwen35b-mtp")
 			w.Header().Set("Content-Type", "text/event-stream")
 			for _, chunk := range chunks {
 				payload := map[string]any{
@@ -53,6 +56,7 @@ func newStreamingServer(chunks []string, includeTimings bool) *httptest.Server {
 func runApp(t *testing.T, srv *httptest.Server) *teatest.TestModel {
 	m := New(RunOptions{Endpoint: srv.URL})
 	m.scanPorts = nil
+	m.chooseMode(choiceFor(modeChat))
 	return teatest.NewTestModel(t, m, teatest.WithInitialTermSize(100, 40))
 }
 
@@ -194,7 +198,7 @@ func TestPromptAppearsOnceInCompletionRequest(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/v1/models":
-			_, _ = w.Write([]byte(`{"data":[{"id":"tiny","context_window":4096}]}`))
+			_, _ = w.Write([]byte(`{"data":[{"id":"qwen35-0.8b","context_window":4096}]}`))
 			return
 		case "/v1/chat/completions":
 		default:
@@ -236,7 +240,7 @@ func TestCompletionHTTPErrorIncludesServerDetail(t *testing.T) {
 	defer srv.Close()
 
 	m := New(RunOptions{Endpoint: srv.URL})
-	m.currentModel = "tiny"
+	m.currentModel = "qwen35-0.8b"
 	m.messages = []message{
 		{role: "user", content: "hello"},
 		{role: "assistant"},
@@ -255,11 +259,40 @@ func TestCompletionHTTPErrorIncludesServerDetail(t *testing.T) {
 }
 
 func TestUnreachableEndpoint(t *testing.T) {
-	err := Run("http://127.0.0.1:1")
+	err := Run(RunOptions{Endpoint: "http://127.0.0.1:1"})
 	if err == nil {
 		t.Fatalf("expected unreachable endpoint error")
 	}
-	if !strings.Contains(err.Error(), "outrider serve tiny") {
+	if !strings.Contains(err.Error(), "outrider serve qwen35-0.8b") {
 		t.Fatalf("unreachable endpoint error = %q", err)
+	}
+}
+
+// The gateway loads whatever model a request names, so selecting one on the
+// endpoint already in use is a promise until a reply confirms it.
+func TestSelectingAnotherGatewayModelWaitsForTheNextMessage(t *testing.T) {
+	m := New(RunOptions{Endpoint: "http://127.0.0.1:11435"})
+	m.currentModel = "qwen35-0.8b"
+	m.selectModel(modelRow{id: "qwen35-2b", endpoint: "http://127.0.0.1:11435"})
+	if !m.pendingSwitch {
+		t.Fatal("switch was reported as done before anything served it")
+	}
+	if !strings.Contains(m.identityLine, "loads on the next message") {
+		t.Fatalf("identity = %q", m.identityLine)
+	}
+	m.applyStreamMsg(streamMsg{served: "qwen35-2b"})
+	if m.pendingSwitch || strings.Contains(m.identityLine, "loads on") {
+		t.Fatalf("pending = %v, identity = %q", m.pendingSwitch, m.identityLine)
+	}
+}
+
+// A gateway that served something other than what was asked for is telling
+// the session it is wrong about which model it is talking to.
+func TestServedModelHeaderCorrectsTheSession(t *testing.T) {
+	m := New(RunOptions{Endpoint: "http://127.0.0.1:11435"})
+	m.currentModel = "qwen35-0.8b"
+	m.applyStreamMsg(streamMsg{served: "qwen35-2b"})
+	if m.currentModel != "qwen35-2b" {
+		t.Fatalf("currentModel = %q", m.currentModel)
 	}
 }

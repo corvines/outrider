@@ -1,44 +1,5 @@
 [
   {
-    "id": "tiny",
-    "dev": true,
-    "runnable": true,
-    "description": "Qwen3.5 0.8B official Q4_0 GGUF for the local smoke proof",
-    "model": {
-      "repo": "ggml-org/Qwen3.5-0.8B-GGUF",
-      "file": "Qwen3.5-0.8B-Q4_0.gguf",
-      "quant": "Q4_0",
-      "sha256": "57d1997790d1744fba5b40a7317df71ea5e2acee28c47e78f0cce39c0703f8cf",
-      "sizeBytes": 563036064
-    },
-    "context": { "size": 4096, "original": 4096 },
-    "gpuLayers": "all",
-    "fit": "on",
-    "flashAttention": true,
-    "kvCache": { "keyType": "f16", "valueType": "f16", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
-    "memory": {
-      "mmap": true,
-      "mlock": false,
-      "cacheRamMiB": 512,
-      "contextCheckpoints": 0,
-      "checkpointMinStep": 8192
-    },
-    "jinja": true,
-    "systemPrompt": "You are a concise, helpful local assistant.",
-    "sampling": {
-      "temperature": 0.2,
-      "topP": 0.9,
-      "topK": 20,
-      "minP": 0.05,
-      "repeatPenalty": 1.05
-    },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": false },
-    "extraArgs": [],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
-  },
-  {
     "id": "qwen3-1.7b",
     "dev": true,
     "runnable": true,
@@ -50,12 +11,23 @@
       "sha256": "d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5",
       "sizeBytes": 1282439264
     },
-    "context": { "size": 32768, "original": 32768 },
+    "context": {
+      "size": 32768,
+      "original": 32768
+    },
     "gpuLayers": "all",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "f16", "valueType": "f16", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "f16",
+      "valueType": "f16",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -72,10 +44,19 @@
       "minP": 0,
       "repeatPenalty": 1.0
     },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": true },
-    "extraArgs": ["--presence-penalty", "1.5"],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "speculation": {
+      "mode": "none"
+    },
+    "persistence": {
+      "enabled": true
+    },
+    "extraArgs": [
+      "--presence-penalty",
+      "1.5"
+    ],
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   },
   {
     "id": "minicpm5-1b",
@@ -89,12 +70,23 @@
       "sha256": "81b64d05a23b17b34c475f42b3e72fbde62d4b92cc34541f7a8031d0752deafa",
       "sizeBytes": 688065920
     },
-    "context": { "size": 32768, "original": 131072 },
+    "context": {
+      "size": 32768,
+      "original": 131072
+    },
     "gpuLayers": "all",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -111,10 +103,19 @@
       "minP": 0,
       "repeatPenalty": 1.05
     },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": false },
-    "extraArgs": ["--reasoning", "off"],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "speculation": {
+      "mode": "none"
+    },
+    "persistence": {
+      "enabled": false
+    },
+    "extraArgs": [
+      "--reasoning",
+      "off"
+    ],
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   },
   {
     "id": "granite4.2-3b",
@@ -128,12 +129,23 @@
       "sha256": "20e436143017578687f7f848225cc6c6038126c84149192229c7dff6e4e0f427",
       "sizeBytes": 2244012160
     },
-    "context": { "size": 32768, "original": 131072 },
+    "context": {
+      "size": 32768,
+      "original": 131072
+    },
     "gpuLayers": "all",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -150,10 +162,19 @@
       "minP": 0,
       "repeatPenalty": 1.0
     },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": false },
-    "extraArgs": ["--reasoning", "off"],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "speculation": {
+      "mode": "none"
+    },
+    "persistence": {
+      "enabled": false
+    },
+    "extraArgs": [
+      "--reasoning",
+      "off"
+    ],
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   },
   {
     "id": "ling3-tiny",
@@ -167,12 +188,23 @@
       "sha256": "246d67d45f5b0c7447ca0ce0bdb8b46b8a47b593c5068635dc16422c051d7be9",
       "sizeBytes": 4823894944
     },
-    "context": { "size": 16384, "original": 131072 },
+    "context": {
+      "size": 16384,
+      "original": 131072
+    },
     "gpuLayers": "auto",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -189,10 +221,19 @@
       "minP": 0,
       "repeatPenalty": 1.0
     },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": false },
-    "extraArgs": ["--reasoning", "off"],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "speculation": {
+      "mode": "none"
+    },
+    "persistence": {
+      "enabled": false
+    },
+    "extraArgs": [
+      "--reasoning",
+      "off"
+    ],
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   },
   {
     "id": "qwen35-4b-helper",
@@ -206,12 +247,23 @@
       "sha256": "18df851efa1870eb2df6de0114031bca5a302beeeb1cb98665a6f65903e98cc8",
       "sizeBytes": 2374564160
     },
-    "context": { "size": 32768, "original": 262144 },
+    "context": {
+      "size": 32768,
+      "original": 262144
+    },
     "gpuLayers": "auto",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -234,8 +286,12 @@
       "minTokens": 0,
       "minProbability": 0
     },
-    "persistence": { "enabled": false },
-        "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "persistence": {
+      "enabled": false
+    },
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   },
   {
     "id": "granite4-h-tiny",
@@ -249,12 +305,23 @@
       "sha256": "5a38b08c441ae1adbafb1d2b8a7167e0d48734d83af68b268cefea1eec553dcd",
       "sizeBytes": 4230976352
     },
-    "context": { "size": 32768, "original": 131072 },
+    "context": {
+      "size": 32768,
+      "original": 131072
+    },
     "gpuLayers": "auto",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -271,10 +338,16 @@
       "minP": 0,
       "repeatPenalty": 1.0
     },
-    "speculation": { "mode": "none" },
-    "persistence": { "enabled": false },
+    "speculation": {
+      "mode": "none"
+    },
+    "persistence": {
+      "enabled": false
+    },
     "extraArgs": [],
-    "admission": { "validatedPhysicalMemoryMiB": 65536 }
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   },
   {
     "id": "qwen35b-mtp",
@@ -287,12 +360,23 @@
       "sha256": "0b21525e972670ed59e1812e170b27c26355381f0656ecc4e25617ece7dac58b",
       "sizeBytes": 22663387424
     },
-    "context": { "size": 32768, "original": 131072 },
+    "context": {
+      "size": 32768,
+      "original": 131072
+    },
     "gpuLayers": "auto",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 1024, "microSize": 512, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 1024,
+      "microSize": 512,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,
@@ -322,8 +406,76 @@
       "minTokens": 0,
       "minProbability": 0
     },
-    "persistence": { "enabled": false },
-    "admission": { "validatedPhysicalMemoryMiB": 32768 }
+    "persistence": {
+      "enabled": false
+    },
+    "admission": {
+      "validatedPhysicalMemoryMiB": 32768
+    }
+  },
+  {
+    "id": "qwen35-0.8b",
+    "runnable": true,
+    "description": "Qwen3.5 0.8B Q4_K_M MTP helper at 32K context",
+    "model": {
+      "repo": "unsloth/Qwen3.5-0.8B-MTP-GGUF",
+      "file": "Qwen3.5-0.8B-Q4_K_M.gguf",
+      "quant": "Q4_K_M",
+      "sha256": "ac7c9d7a1b3e3695bb3bd50f8ceaa97f9c93e99ccc3d3d1a620301b6dd6d3d86",
+      "sizeBytes": 549698976
+    },
+    "context": {
+      "size": 32768,
+      "original": 262144
+    },
+    "gpuLayers": "auto",
+    "fit": "on",
+    "flashAttention": true,
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
+    "memory": {
+      "mmap": true,
+      "mlock": false,
+      "cacheRamMiB": 0,
+      "contextCheckpoints": 0,
+      "checkpointMinStep": 8192
+    },
+    "multimodalProject": {
+      "repo": "unsloth/Qwen3.5-0.8B-MTP-GGUF",
+      "file": "mmproj-F16.gguf",
+      "quant": "F16",
+      "sha256": "ea8519d0c6240e465a0265d6912f73d750a17ca7d42150281b778b8b59f05798",
+      "sizeBytes": 204987104
+    },
+    "jinja": true,
+    "systemPrompt": "You are a concise, helpful local assistant.",
+    "sampling": {
+      "temperature": 0.3,
+      "topP": 0.95,
+      "topK": 20,
+      "minP": 0,
+      "repeatPenalty": 1.0
+    },
+    "speculation": {
+      "mode": "mtp",
+      "tokens": 2,
+      "minTokens": 0,
+      "minProbability": 0
+    },
+    "persistence": {
+      "enabled": false
+    },
+    "admission": {
+      "validatedPhysicalMemoryMiB": 8192
+    }
   },
   {
     "id": "qwen35-2b",
@@ -336,12 +488,23 @@
       "sha256": "18c92228fc1498a02506f64593f7cc8cc02f406f732a217c6ba99ad1254d4f0b",
       "sizeBytes": 1329851808
     },
-    "context": { "size": 32768, "original": 262144 },
+    "context": {
+      "size": 32768,
+      "original": 262144
+    },
     "gpuLayers": "auto",
     "fit": "on",
     "flashAttention": true,
-    "kvCache": { "keyType": "q4_0", "valueType": "q4_0", "unified": true },
-    "batch": { "size": 512, "microSize": 256, "parallel": 1 },
+    "kvCache": {
+      "keyType": "q4_0",
+      "valueType": "q4_0",
+      "unified": true
+    },
+    "batch": {
+      "size": 512,
+      "microSize": 256,
+      "parallel": 1
+    },
     "memory": {
       "mmap": true,
       "mlock": false,

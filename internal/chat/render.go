@@ -251,6 +251,9 @@ func (m *model) footerView() string {
 }
 
 func (m *model) View() string {
+	if m.mode == modeUnset {
+		return m.launchView()
+	}
 	m.syncComposerHeight()
 	m.rebuildTranscripts()
 	lines := m.renderedLines

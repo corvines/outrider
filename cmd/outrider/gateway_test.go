@@ -50,7 +50,7 @@ func TestGatewayPortsReserveAdjacentBackend(t *testing.T) {
 }
 
 func TestGatewayHTTPHandlerReportsStoppedModel(t *testing.T) {
-	gateway, err := switcher.New([]catalog.Entry{{ID: "tiny"}}, nil, nil)
+	gateway, err := switcher.New([]catalog.Entry{{ID: "qwen35-0.8b"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +89,7 @@ func TestGatewayHTTPHandlerReturnsCurrentRunLogs(t *testing.T) {
 	if err := os.WriteFile(logPath, []byte("first line\nsecond line\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	gateway, err := switcher.New([]catalog.Entry{{ID: "tiny"}}, nil, nil)
+	gateway, err := switcher.New([]catalog.Entry{{ID: "qwen35-0.8b"}}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,7 +217,7 @@ func TestPostGatewayJSONReportsStoppedWhenServerCloses(t *testing.T) {
 		_ = listener.Close()
 		_ = conn.Close()
 	}()
-	err = postGatewayJSON(context.Background(), "http://"+listener.Addr().String()+"/admin/model", map[string]string{"model": "tiny"})
+	err = postGatewayJSON(context.Background(), "http://"+listener.Addr().String()+"/admin/model", map[string]string{"model": "qwen35-0.8b"})
 	if err == nil || !strings.Contains(err.Error(), "Outrider stopped") {
 		t.Fatalf("err = %v", err)
 	}
@@ -234,7 +234,7 @@ func (backend *recordingGatewayBackend) Ensure(_ context.Context, modelID string
 
 func TestGatewayHTTPHandlerLoadsRequestedModel(t *testing.T) {
 	backend := &recordingGatewayBackend{}
-	gateway, err := switcher.New([]catalog.Entry{{ID: "tiny"}}, backend, nil)
+	gateway, err := switcher.New([]catalog.Entry{{ID: "qwen35-0.8b"}}, backend, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -243,13 +243,13 @@ func TestGatewayHTTPHandlerLoadsRequestedModel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	request := httptest.NewRequest(http.MethodPost, "/admin/model", strings.NewReader(`{"model":"tiny"}`))
+	request := httptest.NewRequest(http.MethodPost, "/admin/model", strings.NewReader(`{"model":"qwen35-0.8b"}`))
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}
-	if backend.model != "tiny" {
+	if backend.model != "qwen35-0.8b" {
 		t.Fatalf("model = %q", backend.model)
 	}
 }
@@ -276,12 +276,12 @@ func TestGatewayCatalogReportsProtectedAndCustomModels(t *testing.T) {
 	for _, model := range models {
 		found[model.ID] = model
 	}
-	tiny := found["tiny"]
+	tiny := found["qwen35-0.8b"]
 	lite := found["qwen3-1.7b"]
 	helper := found["granite4.2-3b"]
 	primary := found["qwen35b-mtp"]
 	custom := found["custom-example"]
-	if tiny.ID != "tiny" || tiny.Protected || tiny.CanDelete || tiny.Cached {
+	if tiny.ID != "qwen35-0.8b" || tiny.Protected || tiny.CanDelete || tiny.Cached {
 		t.Fatalf("tiny = %#v", tiny)
 	}
 	for _, model := range []gatewayModelStatus{lite, helper, primary} {

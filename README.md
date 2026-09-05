@@ -1,5 +1,10 @@
 # Outrider
 
+> **Under development. Not ready to use.** This is public so the work is in
+> the open, not because it works. Commands, profile names and file locations
+> change without notice, nothing is kept working across an upgrade, and things
+> are broken at any given moment.
+
 Runs local models on Apple silicon and serves them at
 `http://127.0.0.1:11435/v1`, which any OpenAI-compatible client can talk to.
 

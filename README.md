@@ -1,9 +1,7 @@
 # Outrider
 
-> **Under development. Not ready to use.** This is public so the work is in
-> the open, not because it works. Commands, profile names and file locations
-> change without notice, nothing is kept working across an upgrade, and things
-> are broken at any given moment.
+> **In development. Not for use yet. Not accepting pull requests at the
+> moment.**
 
 Runs local models on Apple silicon and serves them at
 `http://127.0.0.1:11435/v1`, which any OpenAI-compatible client can talk to.
@@ -18,13 +16,25 @@ outrider use qwen35b-mtp
 
 The endpoint stays the same when you switch models.
 
-Profiles are pinned. Each one names a repo, a file, a quantization and the
-flags it was tested with. `outrider models` lists them. There aren't many, and
-they get swapped out when better weights show up. Outrider won't start a
-profile that needs more memory than the machine has.
-
 Apple silicon only. Weights come from their publishers under their own
 licenses.
+
+## Why this exists
+
+Open-weight models good enough for real work now fit on a 32 to 64 GB Apple
+silicon Mac. Running one well still takes decisions most people have no way to
+make: which weights, which quantization, how much context, which KV cache type,
+which flags. Get them wrong and the model is slow, or wrong, or takes the
+machine down. The hardware here is narrow enough that those decisions can be
+made once and tested, which is why Outrider is Mac only and why the list of
+models is short.
+
+Outrider serves an OpenAI-compatible endpoint and nothing else. No agent, no
+tools, no cloud fallback. It was built for an internal harness that needed a
+local endpoint in the first minute, offline, with no account and no API key,
+and it is useful to anyone who already owns the hardware and would rather not
+pay for API compute. The serving backend is llama.cpp today and can change. The
+endpoint does not.
 
 ## Docs
 

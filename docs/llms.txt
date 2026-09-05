@@ -16,7 +16,7 @@ Run `outrider stop` to shut the model down and free the memory.
 
 ## What outrider is and is not [lines=8]
 
-Outrider is a launcher and a switch in front of llama.cpp.
+Outrider is a launcher and a switch in front of a local inference provider.
 Outrider requires an Apple silicon Mac; it does not run on Intel or Linux.
 Outrider needs 32 GB of memory to run its largest model.
 Outrider runs its smaller models on 8 GB.

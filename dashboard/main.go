@@ -58,7 +58,7 @@ func main() {
 			Handler: application.AssetFileServerFS(assets),
 		},
 		Mac: application.MacOptions{
-			ActivationPolicy: application.ActivationPolicyAccessory,
+			ActivationPolicy: application.ActivationPolicyRegular,
 			ApplicationShouldTerminateAfterLastWindowClosed: false,
 		},
 	})
@@ -86,10 +86,14 @@ func main() {
 	})
 
 	tray := app.SystemTray.New()
+	menuIcon, err := paddedTrayIcon(trayIcon)
+	if err != nil {
+		log.Fatalf("outrider: prepare menu bar icon: %v", err)
+	}
 	if runtime.GOOS == "darwin" {
-		tray.SetTemplateIcon(trayIcon)
+		tray.SetTemplateIcon(menuIcon)
 	} else {
-		tray.SetIcon(trayIcon)
+		tray.SetIcon(menuIcon)
 	}
 	tray.SetTooltip("Outrider model server")
 

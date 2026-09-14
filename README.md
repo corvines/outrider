@@ -20,17 +20,27 @@ The models fall into two categories:
 Vera integration adds a place to start before connecting a paid provider,
 including simple local chat. A fuller setup concierge is still in development.
 
+## Install
+
+1. Curl: run this in Terminal, then open `Outrider.app` in `~/Applications`:
+
+   ```sh
+   curl -fsSL https://get.corvines.com/install.sh | sh
+   ```
+
+2. Development: build the app from source using the
+   [desktop build instructions](docs/desktop-app.md), then open
+   `dist/Outrider.app`.
+
+3. DMG download (coming soon): download the disk image, double-click it,
+   and drag Outrider into Applications.
+
+See [Install](docs/install.md) for installation details.
+
 ## Using the app
 
-Install the current development build by running this in Terminal:
-
-```sh
-curl -fsSL https://get.corvines.com/install.sh | sh
-```
-
-Then open `Outrider.app` in `~/Applications` using Finder. The app starts the
-local server for you; downloading models and chatting happen inside the app.
-See [Install](docs/install.md) for details.
+Open `Outrider.app`. It starts the local server for you; downloading models
+and chatting happen inside the app.
 
 1. To use the local-frontier model, open Models, find `qwen35b-mtp`, and
    choose Download. When it finishes, choose Load, then open Chat.

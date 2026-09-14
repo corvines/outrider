@@ -175,8 +175,9 @@ func start(ctx context.Context, plan manifest.Plan, options StartOptions) (Statu
 	record = &ProcessRecord{
 		SchemaVersion: ProcessRecordSchemaVersion,
 		PID:           pid, StartedAt: time.Now().UTC().Format(time.RFC3339Nano),
-		ProcessStartedAt: observed.ProcessStartedAt,
-		Executable:       plan.Executable, Command: observed.Command,
+		ProcessStartedAt:  observed.ProcessStartedAt,
+		ProcessStartedUTC: observed.ProcessStartedUTC,
+		Executable:        plan.Executable, Command: observed.Command,
 		Argv: argv, ArgvSHA256: ArgvSHA256(argv), Preset: plan.Profile.ID,
 		Port: plan.Port, LogFile: plan.State.Log,
 		SessionEnabled: plan.Session.Enabled, SessionSlot: plan.Session.Slot,

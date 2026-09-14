@@ -18,27 +18,29 @@ import (
 const ProcessRecordSchemaVersion = 1
 
 type ProcessRecord struct {
-	SchemaVersion    int      `json:"schemaVersion"`
-	PID              int      `json:"pid"`
-	StartedAt        string   `json:"startedAt"`
-	ProcessStartedAt string   `json:"processStartedAt"`
-	Executable       string   `json:"executable"`
-	Command          string   `json:"command"`
-	Argv             []string `json:"argv"`
-	ArgvSHA256       string   `json:"argvSha256"`
-	Preset           string   `json:"preset"`
-	Port             int      `json:"port"`
-	LogFile          string   `json:"logFile"`
-	SessionEnabled   bool     `json:"sessionEnabled,omitempty"`
-	SessionSlot      int      `json:"sessionSlot,omitempty"`
-	SessionKey       string   `json:"sessionKey,omitempty"`
-	SessionDirectory string   `json:"sessionDirectory,omitempty"`
-	SessionFilename  string   `json:"sessionFilename,omitempty"`
+	SchemaVersion     int      `json:"schemaVersion"`
+	PID               int      `json:"pid"`
+	StartedAt         string   `json:"startedAt"`
+	ProcessStartedAt  string   `json:"processStartedAt"`
+	ProcessStartedUTC string   `json:"processStartedUTC,omitempty"`
+	Executable        string   `json:"executable"`
+	Command           string   `json:"command"`
+	Argv              []string `json:"argv"`
+	ArgvSHA256        string   `json:"argvSha256"`
+	Preset            string   `json:"preset"`
+	Port              int      `json:"port"`
+	LogFile           string   `json:"logFile"`
+	SessionEnabled    bool     `json:"sessionEnabled,omitempty"`
+	SessionSlot       int      `json:"sessionSlot,omitempty"`
+	SessionKey        string   `json:"sessionKey,omitempty"`
+	SessionDirectory  string   `json:"sessionDirectory,omitempty"`
+	SessionFilename   string   `json:"sessionFilename,omitempty"`
 }
 
 type ObservedProcess struct {
-	ProcessStartedAt string
-	Command          string
+	ProcessStartedAt  string
+	ProcessStartedUTC string
+	Command           string
 }
 
 func ArgvSHA256(argv []string) string {
@@ -53,7 +55,11 @@ func ArgvSHA256(argv []string) string {
 }
 
 func IdentityMatches(record ProcessRecord, observed ObservedProcess) bool {
-	return record.ProcessStartedAt == observed.ProcessStartedAt &&
+	startMatches := record.ProcessStartedAt == observed.ProcessStartedAt
+	if record.ProcessStartedUTC != "" {
+		startMatches = record.ProcessStartedUTC == observed.ProcessStartedUTC
+	}
+	return startMatches &&
 		record.Command == observed.Command &&
 		record.ArgvSHA256 == ArgvSHA256(record.Argv)
 }
@@ -112,11 +118,18 @@ func writeProcessRecord(path string, record ProcessRecord) error {
 
 func inspectProcess(pid int) *ObservedProcess {
 	startedAt := ps(pid, "lstart=")
+	utcCommand := exec.Command("ps", "-ww", "-p", strconv.Itoa(pid), "-o", "lstart=")
+	utcCommand.Env = append(os.Environ(), "TZ=UTC", "LC_ALL=C")
+	startedUTC, err := utcCommand.Output()
 	command := ps(pid, "command=")
-	if startedAt == "" || command == "" {
+	if err != nil || strings.TrimSpace(string(startedUTC)) == "" || startedAt == "" || command == "" {
 		return nil
 	}
-	return &ObservedProcess{ProcessStartedAt: strings.TrimSpace(startedAt), Command: strings.TrimSpace(command)}
+	return &ObservedProcess{
+		ProcessStartedAt:  strings.TrimSpace(startedAt),
+		ProcessStartedUTC: strings.TrimSpace(string(startedUTC)),
+		Command:           strings.TrimSpace(command),
+	}
 }
 
 func ps(pid int, field string) string {

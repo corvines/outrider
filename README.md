@@ -22,8 +22,15 @@ including simple local chat. A fuller setup concierge is still in development.
 
 ## Using the app
 
-After [installing the desktop preview](docs/install.md), open `Outrider.app`.
-The app starts the local server for you.
+Install the current development build by running this in Terminal:
+
+```sh
+curl -fsSL https://get.corvines.com/install.sh | sh
+```
+
+Then open `Outrider.app` in `~/Applications` using Finder. The app starts the
+local server for you; downloading models and chatting happen inside the app.
+See [Install](docs/install.md) for details.
 
 1. To use the local-frontier model, open Models, find `qwen35b-mtp`, and
    choose Download. When it finishes, choose Load, then open Chat.

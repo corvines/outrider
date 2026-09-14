@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs the outrider command. Served as the target of
+# Installs the Outrider app and command. Served as the target of
 # `curl -fsSL <url> | sh`, so it must run under plain sh, never prompt, and
 # exit non-zero on any failure.
 #
@@ -8,8 +8,8 @@
 # belongs to `outrider install`, which this delegates to.
 set -eu
 
-DIST_BASE="${OUTRIDER_DIST_BASE:-https://github.com/corvines/outrider/releases/latest/download}"
-ARCHIVE="outrider_darwin_arm64.tar.gz"
+DIST_BASE="${OUTRIDER_DIST_BASE:-https://get.corvines.com/dist}"
+ARCHIVE="outrider_desktop_darwin_arm64.tar.gz"
 
 fail() {
 	echo "outrider: $1" >&2
@@ -37,6 +37,14 @@ main() {
 
 	tar -xzf "$work/$ARCHIVE" -C "$work" || fail "could not extract $ARCHIVE"
 	[ -f "$work/outrider" ] || fail "$ARCHIVE does not contain outrider"
+	app="$work/Outrider.app"
+	[ -x "$app/Contents/MacOS/outrider-dashboard" ] || fail "archive does not contain the desktop app"
+	cmp -s "$work/outrider" "$app/Contents/MacOS/outrider" || fail "app and CLI versions differ"
+	codesign --verify --deep --strict "$app" || fail "app signature verification failed"
+	applications="${OUTRIDER_APPLICATIONS_DIR:-$HOME/Applications}"
+	app_target="$applications/Outrider.app"
+	[ ! -e "$app_target" ] && [ ! -L "$app_target" ] ||
+		fail "$app_target already exists; quit it and move it aside before installing this preview"
 
 	chmod 755 "$work/outrider"
 	"$work/outrider" version >/dev/null 2>&1 || fail "the downloaded binary does not run"
@@ -48,11 +56,27 @@ main() {
 	target="$(printf '%s\n' "$placement" |
 		sed -n 's/.*"target"[[:space:]]*:[[:space:]]*"\(.*\)".*/\1/p' | head -1)"
 	[ -n "$target" ] || fail "outrider install did not report a target"
+	mkdir -p "$applications" || fail "CLI installed, but could not create $applications"
+	# Stage on the destination filesystem before publishing the complete bundle.
+	app_stage="$(mktemp -d "$applications/.outrider-install.XXXXXX")" ||
+		fail "CLI installed, but could not stage the app"
+	if ! ditto "$app" "$app_stage/Outrider.app"; then
+		fail "CLI installed, but app copy failed; staging directory: $app_stage"
+	fi
+	[ ! -e "$app_target" ] && [ ! -L "$app_target" ] ||
+		fail "another app appeared at $app_target; staging directory: $app_stage"
+	mv -n "$app_stage/Outrider.app" "$app_target" || fail "could not place app from $app_stage"
+	[ ! -e "$app_stage/Outrider.app" ] || fail "another app appeared at $app_target; staging directory: $app_stage"
+	rmdir "$app_stage"
 
 	# First line on stdout, so a caller reads the path rather than searching
 	# PATH or parsing the message below.
 	echo "outrider-install-path=$target"
 	echo "installed outrider to $target"
+	echo "installed Outrider.app to $app_target"
+	echo "Open Outrider.app in Finder to get started. Models download separately."
+	echo "This preview is ad-hoc signed, not notarized. macOS may require Open Anyway in Privacy & Security."
+	echo "The app was not launched automatically. Existing model downloads were not changed."
 	directory="$(dirname "$target")"
 	case ":$PATH:" in
 	*":$directory:"*) ;;

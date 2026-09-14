@@ -1,8 +1,8 @@
 #!/bin/sh
-# Builds the release tarball and checksum file that scripts/install.sh fetches.
+# Builds the standalone CLI tarball and checksum file.
 #
 # Output lands in dist/ as outrider_darwin_arm64.tar.gz and SHA256SUMS, which
-# is the layout OUTRIDER_DIST_BASE points at.
+# is the standalone CLI download layout.
 set -eu
 
 OUT_DIR="${OUTRIDER_RELEASE_DIR:-dist}"

@@ -17,7 +17,17 @@ tar -xzf outrider_darwin_arm64.tar.gz
 ./outrider install
 ```
 
-`scripts/install.sh` does those three steps in one command.
+For the desktop preview, run:
+
+```sh
+curl -fsSL https://get.corvines.com/install.sh | sh
+```
+
+`scripts/install.sh` verifies and installs the desktop archive plus the CLI.
+The app lands in `~/Applications/Outrider.app`. Open it in Finder; models
+download only after consent. The preview installer refuses to replace an
+existing app: quit it and move it aside before reinstalling. Keep downloaded
+models when asked during uninstall to avoid downloading them again.
 
 The binary lands in `~/.local/bin/outrider`, so no administrator privileges are
 needed. Add `~/.local/bin` to `PATH` if it isn't there already.

@@ -63,9 +63,13 @@ func DownloadFileWithProgress(
 	destination string,
 	progress ProgressFunc,
 ) error {
+	client, err := developmentDownloadClient(destination)
+	if err != nil {
+		return err
+	}
 	var lastErr error
 	for attempt := 0; attempt < 3; attempt++ {
-		lastErr = downloadAttempt(ctx, http.DefaultClient, sourceURL, destination, progress)
+		lastErr = downloadAttempt(ctx, client, sourceURL, destination, progress)
 		if lastErr == nil {
 			return nil
 		}

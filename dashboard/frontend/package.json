@@ -10,7 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@wailsio/runtime": "latest"
+    "@wailsio/runtime": "latest",
+    "markdown-it": "15.0.1"
   },
   "devDependencies": {
     "typescript": "^5.9.3",

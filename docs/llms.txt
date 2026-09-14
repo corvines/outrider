@@ -1,74 +1,155 @@
 # Outrider
 
-Outrider runs a large language model on your own Mac and serves it on
-loopback. This guide is the whole answer surface: if something is not here,
-say you do not know rather than guessing at a command.
+Outrider runs a large language model on your own Mac and serves it on loopback.
+
+## Outrider, Vera, and OpenRouter
+
+Outrider runs local models. OpenRouter is a different service: a hosted API
+that gives access to models from multiple providers using an OpenRouter API key.
+OpenRouter needs internet access; Outrider can run downloaded models offline.
+Vera is a coding-agent environment with a terminal UI and other clients.
+Vera can use OpenRouter or a local model endpoint such as Outrider.
+Outrider chat gives advice, but cannot read or edit Vera's configuration,
+install providers, inspect the user's API key, or execute commands for them.
+
+## Start Vera and connect OpenRouter
+
+Run `vera` to open the installed Vera. Run `vera help` for help without a model.
+On a fresh Vera with no provider, choose `Connect a provider` on the home screen.
+The wizard asks for the provider, its credential, then a model. Choose OpenRouter,
+paste an OpenRouter API key into the wizard's key field, and choose a model.
+If Vera already has a provider, open `/model`, then press `ctrl+e` for providers.
+Choose OpenRouter and connect its API key in the provider controls.
+Select an `openrouter` model in `/model` and send a short test message.
+Choose from OpenRouter's model catalog, not Outrider's local profile IDs.
+The status line shows the provider and model Vera is using.
+Create the key in your OpenRouter account; paste it only into Vera's credential
+field, never into Outrider chat or a shared log. This helper cannot obtain it.
+
+## Connect Vera to Outrider
+
+To connect Vera to a running Outrider server:
+1. In Vera, open `/model`, press `ctrl+e`, and add a custom provider named `outrider`.
+2. In that provider form, set protocol `openai-chat`, API base URL `http://127.0.0.1:11435/v1`, and credential `none` (no API key).
+3. Refresh models in `/model`, select an Outrider model, and send a short test message.
+If Outrider is not running, run `outrider serve ling3-tiny` in your terminal first.
+The API base URL includes `/v1`. Use your chosen port if you changed the default.
+`ling3-tiny` is the setup helper; `qwen35b-mtp` is the larger coding profile.
+The server loads the requested model on the next message, replacing the old one.
+
+## Vera provider troubleshooting
+
+If models are missing after a provider change, run `vera models refresh` in
+your terminal, or refresh from Vera's `/model` pane, then check the provider
+endpoint and status line. The terminal command is not a Vera chat command.
+For a rejected key, read the provider's error and check the key in Vera's
+provider controls. Do not share the key with this helper.
+Use `/doctor` or `/diagnostics` inside Vera to inspect its current runtime.
+For a local Outrider connection, run `outrider status` and `outrider logs`.
+If the problem remains, share the error text with secrets removed.
+Restarting the TUI alone does not fix stale provider discovery.
+
+## Vera configuration files
+
+Vera's default home is `~/.vera`; `VERA_HOME` selects a different home.
+Settings are in `$VERA_HOME/config.json` and the model pool is in
+`$VERA_HOME/pool.json`. With the default home, these are `~/.vera/config.json`
+and `~/.vera/pool.json`. Credentials live in `$VERA_HOME/machine/auth.json`;
+do not paste that file into chat or logs.
+In Vera, `/configure` opens a picker for home config and any existing TUI
+preferences or project config. It does not list the model pool or credential file.
+For ordinary provider setup, use `/model` then `ctrl+e` for provider controls.
 
 ## Install and first run [lines=7]
 
 Run `outrider install` to put the binary at `~/.local/bin/outrider`.
 Add `~/.local/bin` to your PATH if the shell cannot find `outrider` afterwards.
-Run `outrider serve qwen35-2b` to start the server and load a small model.
-Run `outrider chat` to open the chat window and start talking to it.
-Run `scripts/chat.sh` to do both in one step: it starts the server if nothing
-is running, then opens chat.
+Open Outrider.app for desktop use. It starts the server and offers Download
+starter model & Chat, or reuses a downloaded model. Chat stays inside the app.
+Start server, Stop server and Retry are on Overview. Models offers other models.
 Run `outrider stop` to shut the model down and free the memory.
 
 ## What outrider is and is not [lines=8]
 
-Outrider is a launcher and a switch in front of a local inference provider.
+Outrider is a launcher and a switch in front of llama.cpp.
 Outrider requires an Apple silicon Mac; it does not run on Intel or Linux.
 Outrider needs 32 GB of memory to run its largest model.
 Outrider runs its smaller models on 8 GB.
 Outrider is not a model, not a training tool, and not a cloud service.
-Outrider starts no other program on your Mac.
+Outrider starts its bundled llama.cpp model server on your Mac.
 Outrider can read GGUF files that another program has already downloaded.
 Nothing leaves the machine except the download of the weights themselves.
 
-## Commands [lines=13]
+## Outrider commands [lines=13]
 
 Run `outrider models` to list the models you can run.
 Run `outrider show <profile>` to see one model's settings before running it.
 Run `outrider check <profile>` to ask whether it will fit, without starting it.
 Run `outrider pull <profile>` to download the weights ahead of time.
+Run `outrider check --offline <profile>` before travel. It verifies all required
+model files by size and SHA-256, runtime launch/flags, and current resources.
+It downloads nothing and does not load a model. A failure names the next action.
+While online, use `outrider pull <profile>` to prepare missing runtime or models.
+Then test `outrider stop`, `outrider start`, `outrider use <profile>` and chat with
+Wi-Fi off. Repeat for each model you need. OpenRouter requires internet.
+`outrider uninstall --keep-state` retains downloads for reinstalling the binary.
+Keep the binary too for offline reinstall. `--purge` removes runtime and models;
+restore a backup or download them again before going offline.
 Run `outrider serve <profile>` to start the server with that model loaded.
 Run `outrider use <profile>` to swap the loaded model on a running server.
-Run `outrider chat` to open the chat window.
+Open Outrider.app and choose Chat to talk to the loaded model.
 Run `outrider status` to see whether the server is up and what is loaded.
 Run `outrider logs` to read the model server's output.
 Run `outrider stop` to shut everything down.
-Run `outrider cache clean --apply` to delete downloaded weights you no longer
-want; without `--apply` it only reports what it would remove.
+Run `outrider cache clean` to inspect interrupted and quarantined downloads.
+Add `--apply` to delete the listed cleanup candidates, not arbitrary weights.
 Run `outrider uninstall` to remove the binary it installed.
 
-## Chat window [lines=13]
+## Outrider chat window
 
-Type `/model` to open a picker of the models you can switch to.
-Type `/model <id>` to switch straight to one by name.
-Type `/clear` to start the conversation over with the same model.
-Type `/exit` to leave.
-Those are the only commands the chat window has.
-The chat window asks on startup whether you want to talk to the model or ask
-about outrider. Ask about outrider and it answers from this guide alone.
-Press Ctrl+C once to stop a reply that is still being written.
-Switching models takes effect on your next message, because the server loads
-the new model when that message names it. The status line says so while it
-is still pending, and a large model can take a minute.
-Pass `--debug` to `outrider chat` to also list models on other local servers.
-Those cannot be switched to, so they are hidden by default.
+Chat lives inside Outrider.app. Enter sends; Shift+Enter adds a new line.
+Assistant replies display Markdown. Code blocks have a Copy button; Copy chat
+keeps the original Markdown. Web links open in the default browser when clicked.
+HTML is shown as text and images are not fetched automatically.
+Stop reply cancels generation and keeps partial text. New chat clears the
+conversation after confirmation. Copy chat copies the conversation as Markdown.
+Copy before clearing or quitting; history is not saved automatically.
+Review copied text for secrets before sharing. There are no slash commands,
+tools, web access, or file attachments. Each new chat offers Outrider & Vera help,
+which loads this offline reference, or Just chat (bare), with no system prompt.
+New chat clears both the conversation and its selected purpose.
+If no model is ready, the setup card inside Chat offers a starter download
+or loads an already downloaded model. It shows download size and asks before
+downloading. Progress, pause, and retry stay available inside the app.
+Choose models on the Models page. If the loaded model changes, start a New chat
+before sending another message. The old conversation remains available to copy.
 
-## Models [lines=10]
+## Outrider local models [lines=16]
 
-Three models are offered by default.
+`ling3-tiny` is Ling 3.0 Tiny, a 7.9B MoE with 1.3B active parameters.
+Its Q4_K_M weights are 4.82 GB; it is the default setup helper.
+Ling runs at 16384 tokens and accepts text only in this profile.
+It disables thinking and speculation. Its admission check requires 64 GB RAM.
+The weight sizes are download sizes, not total memory requirements.
 `qwen35-0.8b` is Qwen3.5 0.8B, about 0.5 GB, the smallest and quickest.
-`qwen35-2b` is Qwen3.5 2B, about 1.2 GB, the one to start with.
+`qwen35-2b` is Qwen3.5 2B, about 1.2 GB, another smaller option.
 `qwen35b-mtp` is Qwen3.6 35B-A3B, about 21 GB, the most capable.
 Pick `qwen35-2b` if your Mac has less than 32 GB of memory.
-All three run at a 32768 token context and all three accept images.
-Set `OUTRIDER_DEV=1` to also offer six smaller development models.
-Outrider has no config file for models.
-You cannot add a model by editing a file on disk.
-Adding a model means changing the source and rebuilding the binary.
+Those three Qwen profiles run at 32768 tokens and accept images.
+Set `OUTRIDER_DEV=1` to also offer development models.
+
+## Download or add a model
+
+To download a supported model, run `outrider models` in your terminal to see
+profile IDs, then `outrider pull <profile>`. For example,
+`outrider pull ling3-tiny` downloads the starter model.
+Choose a downloaded or available profile on the Models page in Outrider.app,
+or run `outrider use <profile>` in your terminal against a running server.
+Downloading or selecting a supported profile does not require rebuilding.
+Adding an unsupported model to the built-in catalog is different: Outrider
+has no user-editable model catalog. A new built-in profile requires source
+changes and a rebuilt binary; an arbitrary GGUF cannot be registered in a
+user config file.
 
 ## Ports and the HTTP API [lines=11]
 
@@ -84,12 +165,13 @@ model reports back. Those two halves are kept apart on purpose: the first is
 always there, the second only while the model is loaded.
 GET `/health` to check the server is up.
 
-## Speed and speculation [lines=8]
+## Speed and speculation [lines=9]
 
-Speculation makes a model write faster by guessing several tokens at once and
-keeping the guesses that were right. The answer is the same either way.
-`mtp` means the guessing happens inside the model itself, which is what all
-three default models use.
+Speculation can speed generation by drafting several tokens at once and
+verifying them with the target model. The benefit depends on the model.
+`mtp` means the guessing happens inside the model itself. The 35B profile
+uses two-token MTP. Ling uses `none` instead.
+Its profile does not enable persistent KV restoration across restarts.
 `ngram` means the guesses come from repeating text already on screen.
 `none` means no guessing.
 The `/props` field named `speculative.types` reports `none` even while `mtp`

@@ -3,15 +3,17 @@
 > **In development. Not for use yet. Not accepting pull requests at the
 > moment.**
 
-Outrider aims to make downloading, configuring, and running local models simple
-on M-series Apple Silicon Macs. It serves them at `http://127.0.0.1:11435/v1`
-for OpenAI-compatible clients, with particular attention to compatibility with
-Vera and the features it builds on local models.
+Outrider makes it quick and reliable to run a known-good local model on an
+M-series Apple Silicon Mac. It handles the model and runtime settings so you
+do not need to learn the choices involved in a multi-model provider. The main
+profile today is Qwen3.6 35B-A3B (`qwen35b-mtp`), with more models planned.
+It serves an OpenAI-compatible endpoint at `http://127.0.0.1:11435/v1`.
 
-The starter model, `ling3-tiny`, is a helper for setup questions and basic local
-chat. Its inclusion is not a promise of strong general reasoning or coding
-ability. Choose a model suited to the task; making it easy to run does not
-change what it can do.
+Outrider also includes smaller helper models, such as Ling, for smoke testing
+and simple chat, plus additional integration with Vera. These helpers give
+you something to interact with before you have set up Vera with a paid
+provider. A fuller Vera setup concierge is still being developed. The helper
+chat is a starting point; the 35B profile is the main model offering.
 
 For desktop use, open `Outrider.app`, choose Download starter model & Chat
 once, then chat inside the app. A downloaded model is reused instead of
@@ -33,16 +35,15 @@ licenses.
 
 ## Why this exists
 
-Outrider keeps a small set of model profiles with selected weights,
-quantization, context limits, and runtime settings. The goal is to make local
-model provisioning predictable on supported Apple Silicon hardware without
-requiring users to tune the model server themselves.
+Choosing weights, quantization, context limits, and runtime settings is work
+that Outrider handles through a small set of tested profiles. The aim is to
+get a known-good model running on supported hardware with little setup.
 
-Vera is a primary integration target for this local endpoint. Outrider provides
-model serving and basic chat for setup and model checks; Vera provides the
-agent environment and its additional features. Compatibility with Vera does
-not mean every local model can support every task equally well. Outrider has
-no cloud fallback. Its serving backend is llama.cpp.
+Outrider can be used on its own or with an OpenAI-compatible client. Its Vera
+features add a local starting point for users who have not connected a paid
+provider yet. Basic helper chat and the main model serve different purposes;
+Ling's chat capability does not represent the capability of the 35B model.
+The serving backend is llama.cpp, and there is no cloud fallback.
 
 ## Docs
 

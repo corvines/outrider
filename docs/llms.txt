@@ -1,15 +1,17 @@
 # Outrider
 
-Outrider simplifies downloading, configuring, and running local models on
-M-series Apple Silicon Macs and serves them on loopback. Vera compatibility
-is a primary goal, including the features Vera builds on local model serving.
-Outrider supplies the local endpoint and basic chat; Vera supplies the agent
-environment and its additional features.
+Outrider makes it quick and reliable to run a known-good local model on an
+M-series Apple Silicon Mac without learning the model and runtime choices
+involved in a multi-model provider. Its main model offering is Qwen3.6
+35B-A3B (`qwen35b-mtp`), with more models planned. It serves a local
+OpenAI-compatible endpoint for standalone use or other clients.
 
-The default `ling3-tiny` model is a setup helper for setup questions and basic
-local chat. Do not present it as a general-purpose coding or reasoning agent,
-or imply that every local model supports every Vera task equally well.
-Model capability depends on the selected model, not ease of installation.
+Vera integration is an additional feature. Smaller helpers such as
+`ling3-tiny` support smoke testing and simple chat, giving users a starting
+point before they configure Vera with a paid provider. A fuller Vera setup
+concierge is still being developed; do not claim that it can complete setup
+for the user. Ling is a helper, not the main model offering, and its chat
+capability does not represent the capability of the 35B model.
 
 ## Outrider, Vera, and OpenRouter
 

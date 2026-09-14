@@ -28,7 +28,13 @@ var revealInFinder = func(path string) error {
 }
 
 type DashboardService struct {
+	owner         *gatewayOwner
+	serverMu      sync.Mutex
+	serverAction  string
+	serverError   string
+	chatMu        sync.Mutex
 	conversation  *conversation
+	quit          func()
 	endpoint      string
 	client        *http.Client
 	controlClient *http.Client
@@ -37,6 +43,8 @@ type DashboardService struct {
 }
 
 type DashboardSnapshot struct {
+	ServerAction    string            `json:"serverAction,omitempty"`
+	ServerError     string            `json:"serverError,omitempty"`
 	GatewayEndpoint string            `json:"gatewayEndpoint"`
 	GatewayHealth   string            `json:"gatewayHealth"`
 	Model           ModelSnapshot     `json:"model"`
@@ -107,6 +115,7 @@ type modelsResponse struct {
 
 func NewDashboardService(endpoint string) *DashboardService {
 	return &DashboardService{
+		owner:         newGatewayOwner(endpoint),
 		conversation:  newConversation(endpoint),
 		endpoint:      endpoint,
 		client:        &http.Client{Timeout: 3 * time.Second},
@@ -229,6 +238,11 @@ func (service *DashboardService) finishControl(err error) DashboardSnapshot {
 func (service *DashboardService) withCatalog(snapshot DashboardSnapshot) DashboardSnapshot {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	snapshot.ServerAction = service.serverAction
+	snapshot.ServerError = service.serverError
+	if service.serverAction == "stopped" && snapshot.GatewayHealth == "offline" {
+		snapshot.Error = ""
+	}
 	if len(snapshot.Models) > 0 {
 		service.lastCatalog = append([]AdvertisedModel(nil), snapshot.Models...)
 		return snapshot

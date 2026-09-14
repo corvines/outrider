@@ -61,7 +61,6 @@ func TestGatewayOwnerStopRunsStop(t *testing.T) {
 			ran = args
 			return nil
 		},
-		started: true,
 	}
 	if err := owner.Stop(context.Background()); err != nil {
 		t.Fatal(err)
@@ -71,7 +70,7 @@ func TestGatewayOwnerStopRunsStop(t *testing.T) {
 	}
 }
 
-func TestGatewayOwnerAdoptsAndLeavesAnExternalGateway(t *testing.T) {
+func TestGatewayOwnerStopsAGatewayItDidNotStart(t *testing.T) {
 	var ran []string
 	owner := &gatewayOwner{
 		endpoint: "http://127.0.0.1:11435",
@@ -88,8 +87,8 @@ func TestGatewayOwnerAdoptsAndLeavesAnExternalGateway(t *testing.T) {
 	if err := owner.Stop(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(ran) != 0 {
-		t.Fatalf("ran %v against a gateway the app did not start", ran)
+	if len(ran) != 1 || ran[0] != "stop" {
+		t.Fatalf("ran = %v", ran)
 	}
 }
 
@@ -113,28 +112,6 @@ func TestGatewayOwnerStopsWhatEnsureStarted(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(ran) != 2 || ran[0] != "start" || ran[1] != "stop" {
-		t.Fatalf("ran = %v", ran)
-	}
-}
-
-func TestGatewayOwnerDoesNotStopAfterAFailedStart(t *testing.T) {
-	var ran []string
-	owner := &gatewayOwner{
-		endpoint: "http://127.0.0.1:11435",
-		lookPath: func() (string, error) { return "/bin/outrider", nil },
-		run: func(_ context.Context, _ string, args ...string) error {
-			ran = append(ran, args...)
-			return errors.New("port in use")
-		},
-		healthy: func(context.Context, string) bool { return false },
-	}
-	if err := owner.Ensure(context.Background()); err == nil {
-		t.Fatal("expected a start error")
-	}
-	if err := owner.Stop(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if len(ran) != 1 || ran[0] != "start" {
 		t.Fatalf("ran = %v", ran)
 	}
 }

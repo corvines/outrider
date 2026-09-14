@@ -76,10 +76,6 @@ func (service *DashboardService) NewChat() (ChatState, error) {
 	return service.ChatSnapshot(), nil
 }
 
-func loadingActive(loading *LoadingSnapshot) bool {
-	return loading != nil && loading.Phase != "error" && loading.Phase != "paused"
-}
-
 func (service *DashboardService) SendChat(text string) (ChatState, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {

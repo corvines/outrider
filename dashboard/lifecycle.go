@@ -8,17 +8,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
 type gatewayOwner struct {
+	mu       sync.Mutex
 	endpoint string
 	lookPath func() (string, error)
 	run      func(ctx context.Context, binary string, args ...string) error
 	healthy  func(ctx context.Context, endpoint string) bool
-	// started records that Ensure launched the gateway. A gateway that was
-	// already serving belongs to whoever started it, so Stop leaves it alone.
-	started bool
 }
 
 func newGatewayOwner(endpoint string) *gatewayOwner {
@@ -31,6 +30,8 @@ func newGatewayOwner(endpoint string) *gatewayOwner {
 }
 
 func (owner *gatewayOwner) Ensure(ctx context.Context) error {
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
 	if owner.healthy(ctx, owner.endpoint) {
 		return nil
 	}
@@ -41,7 +42,6 @@ func (owner *gatewayOwner) Ensure(ctx context.Context) error {
 	if err := owner.run(ctx, binary, "start"); err != nil {
 		return err
 	}
-	owner.started = true
 	deadline, ok := ctx.Deadline()
 	if !ok {
 		deadline = time.Now().Add(20 * time.Second)
@@ -59,10 +59,11 @@ func (owner *gatewayOwner) Ensure(ctx context.Context) error {
 	return fmt.Errorf("timed out waiting for the Outrider server")
 }
 
+// Stop stops the gateway whether or not this app started it. The command is
+// idempotent: with no process record it reports "already stopped".
 func (owner *gatewayOwner) Stop(ctx context.Context) error {
-	if !owner.started {
-		return nil
-	}
+	owner.mu.Lock()
+	defer owner.mu.Unlock()
 	binary, err := owner.lookPath()
 	if err != nil {
 		return err

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -29,16 +30,14 @@ var trayIcon []byte
 func main() {
 	endpoint := loopbackEndpoint()
 	owner := newGatewayOwner(endpoint)
-	startCtx, cancelStart := context.WithTimeout(context.Background(), 20*time.Second)
-	if err := owner.Ensure(startCtx); err != nil {
-		log.Printf("outrider: could not start the local server: %v", err)
-	}
-	cancelStart()
+	service := NewDashboardService(endpoint)
+	service.owner = owner
 	// Quit reaches us through OnShutdown, not through a deferred call: Quit
 	// terminates the application without unwinding main.
 	var stopOnce sync.Once
 	stopGateway := func() {
 		stopOnce.Do(func() {
+			service.CancelChat()
 			stopCtx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
 			if err := owner.Stop(stopCtx); err != nil {
@@ -48,11 +47,20 @@ func main() {
 	}
 	defer stopGateway()
 
+	var quitApproved atomic.Bool
+	var requestQuit func()
 	app := application.New(application.Options{
 		Name:        "Outrider",
 		Description: "Local model serving dashboard",
+		ShouldQuit: func() bool {
+			if quitApproved.Load() {
+				return true
+			}
+			go requestQuit()
+			return false
+		},
 		Services: []application.Service{
-			application.NewService(NewDashboardService(endpoint)),
+			application.NewService(service),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.AssetFileServerFS(assets),
@@ -64,6 +72,10 @@ func main() {
 	})
 
 	app.OnShutdown(stopGateway)
+	service.quit = func() {
+		quitApproved.Store(true)
+		app.Quit()
+	}
 
 	window := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Name:             "OutriderDashboard",
@@ -84,6 +96,13 @@ func main() {
 		window.Hide()
 		event.Cancel()
 	})
+	requestQuit = func() {
+		snapshot := service.QuitAndStopServer()
+		if snapshot.ServerError != "" {
+			window.Show().Focus()
+			app.Dialog.Error().SetTitle("Could not stop server").SetMessage(snapshot.ServerError + "\n\nOutrider is still open. Retry from the dashboard.").Show()
+		}
+	}
 
 	tray := app.SystemTray.New()
 	menuIcon, err := paddedTrayIcon(trayIcon)
@@ -106,11 +125,16 @@ func main() {
 	})
 	menu.AddSeparator()
 	menu.Add("Quit Outrider").OnClick(func(_ *application.Context) {
-		app.Quit()
+		go requestQuit()
 	})
 	// Keep the dashboard as a normal desktop window. Attaching it to the tray
 	// turns it into a popup-menu window, which makes it float above other apps.
 	tray.SetMenu(menu)
+
+	// The app owns the server for as long as it is open: it starts one on
+	// launch and stops it on quit. An already healthy gateway is adopted
+	// rather than restarted, which keeps a loaded model in memory.
+	go service.StartServer()
 
 	if err := app.Run(); err != nil {
 		log.Printf("outrider: %v", err)

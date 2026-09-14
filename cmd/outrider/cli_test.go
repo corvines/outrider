@@ -11,7 +11,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/corvines/outrider/internal/chat"
 	"github.com/corvines/outrider/internal/manifest"
 	runnerprocess "github.com/corvines/outrider/internal/process"
 )
@@ -148,45 +147,12 @@ func TestLifecycleCommandAliases(t *testing.T) {
 	}
 }
 
-func TestChatCommand(t *testing.T) {
-	var calledWith chat.RunOptions
-	output, err := runWithOptions(
-		context.Background(),
-		[]string{"chat", "--endpoint", "http://127.0.0.1:11436"},
-		map[string]string{},
-		runOptions{Chat: func(options chat.RunOptions) error {
-			calledWith = options
-			return nil
-		}},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if output != "" || calledWith.Endpoint != "http://127.0.0.1:11436" {
-		t.Fatalf("output = %q, endpoint = %q", output, calledWith.Endpoint)
-	}
-	if calledWith.Debug {
-		t.Fatal("chat listed unmanaged models without --debug")
-	}
-}
-
-// --debug is what opens discovery to models outrider does not manage.
-func TestChatCommandDebugFlag(t *testing.T) {
-	var calledWith chat.RunOptions
-	_, err := runWithOptions(
-		context.Background(),
-		[]string{"chat", "--debug"},
-		map[string]string{},
-		runOptions{Chat: func(options chat.RunOptions) error {
-			calledWith = options
-			return nil
-		}},
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !calledWith.Debug {
-		t.Fatal("--debug did not reach the chat session")
+func TestRetiredChatCommandsPointToApp(t *testing.T) {
+	for _, command := range []string{"chat", "run"} {
+		_, err := run(context.Background(), []string{command}, map[string]string{})
+		if err == nil || !strings.Contains(err.Error(), "Outrider.app") {
+			t.Fatalf("%s: %v", command, err)
+		}
 	}
 }
 

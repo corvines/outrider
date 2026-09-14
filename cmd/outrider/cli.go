@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/corvines/outrider/internal/admission"
-	"github.com/corvines/outrider/internal/chat"
 	"github.com/corvines/outrider/internal/endpoint"
 	"github.com/corvines/outrider/internal/installer"
 	"github.com/corvines/outrider/internal/llama"
@@ -34,8 +33,6 @@ const usage = `outrider: loopback llama.cpp runner
   outrider use <profile>
   outrider status
   outrider serve [profile]
-  outrider run <profile|cached-model>
-  outrider chat [--endpoint URL] [--debug]
   outrider smoke
   outrider demo <profile>
   outrider ps
@@ -48,8 +45,7 @@ Add --json anywhere for machine-readable output.
 
 Environment overrides: LLAMA_SERVER_BIN, OUTRIDER_HOME, OUTRIDER_PORT.
 
-Cached-model runs read GGUF files already on the machine. They start no
-other program.
+Chat is available inside Outrider.app.
 `
 
 type runPreparation struct {
@@ -75,7 +71,6 @@ type runSession struct {
 type runOptions struct {
 	Progress          llama.ProgressFunc
 	Notice            func(string)
-	Chat              func(chat.RunOptions) error
 	CurrentExecutable func() (string, error)
 	Confirm           func(string) (bool, error)
 	Human             bool
@@ -250,19 +245,8 @@ func runWithOptions(
 			return "", err
 		}
 		return formatOutput(status, options.Human)
-	case "chat":
-		chatOptions, err := parseChatArguments(argv[1:])
-		if err != nil {
-			return "", err
-		}
-		runChat := options.Chat
-		if runChat == nil {
-			runChat = chat.Run
-		}
-		if err := runChat(chatOptions); err != nil {
-			return "", err
-		}
-		return "", nil
+	case "chat", "run":
+		return "", usageError("Chat has moved into Outrider.app. Open the app and choose Chat. For headless serving, use outrider serve <profile>")
 	case "plan":
 		if len(argv) != 2 {
 			return "", usageError("plan expects exactly one preset id")
@@ -333,11 +317,6 @@ func runWithOptions(
 			return "", err
 		}
 		return formatOutput(output, options.Human)
-	case "run":
-		if len(argv) != 2 {
-			return "", usageError("run expects exactly one profile or development model name")
-		}
-		return runInteractive(ctx, argv[1], environment, options)
 	case "smoke":
 		if len(argv) != 1 {
 			return "", usageError("smoke does not accept a preset id")
@@ -492,47 +471,6 @@ func parseInstallArguments(arguments []string) (installer.UserInstallOptions, er
 		return installer.UserInstallOptions{}, usageError("install accepts only --link and --replace-unmanaged")
 	}
 	return installer.UserInstallOptions{ReplaceUnmanaged: *replaceUnmanaged, Link: *link}, nil
-}
-
-func runInteractive(
-	ctx context.Context,
-	profileID string,
-	environment map[string]string,
-	options runOptions,
-) (string, error) {
-	if _, err := manifest.Get(profileID); err != nil {
-		return "", err
-	}
-	session, operationErr := startSession(ctx, profileID, environment, options)
-	if operationErr == nil {
-		runChat := options.Chat
-		if runChat == nil {
-			runChat = chat.Run
-		}
-		operationErr = runChat(chat.RunOptions{Endpoint: session.Preparation.Plan.Endpoint})
-	}
-	cleanupErr := cleanupSession(session, false)
-	if operationErr != nil && cleanupErr != nil {
-		return "", runnerErrorf("%v; cleanup also failed: %v", operationErr, cleanupErr)
-	}
-	if operationErr != nil {
-		return "", operationErr
-	}
-	return "", cleanupErr
-}
-
-func parseChatArguments(arguments []string) (chat.RunOptions, error) {
-	flags := flag.NewFlagSet("chat", flag.ContinueOnError)
-	flags.SetOutput(io.Discard)
-	endpoint := flags.String("endpoint", "", "model endpoint")
-	debug := flags.Bool("debug", false, "list models outrider does not manage")
-	if err := flags.Parse(arguments); err != nil {
-		return chat.RunOptions{}, usageError(err.Error())
-	}
-	if flags.NArg() != 0 {
-		return chat.RunOptions{}, usageError("chat accepts only --endpoint URL and --debug")
-	}
-	return chat.RunOptions{Endpoint: *endpoint, Debug: *debug}, nil
 }
 
 func parseStopArguments(arguments []string) (bool, error) {

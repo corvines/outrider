@@ -38,11 +38,11 @@ func main() {
 		options.Confirm = confirm
 	}
 	output, err := runWithOptions(ctx, arguments, environmentMap(os.Environ()), options)
+	_, _ = os.Stdout.WriteString(output)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "outrider: %v\n", err)
 		os.Exit(1)
 	}
-	_, _ = os.Stdout.WriteString(output)
 }
 
 func confirm(prompt string) (bool, error) {

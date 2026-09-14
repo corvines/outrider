@@ -21,7 +21,7 @@ import (
 const usage = `outrider: loopback llama.cpp runner
 
   outrider plan <profile>
-  outrider check <profile>
+  outrider check [--offline] <profile>
   outrider verify <profile>
   outrider models
   outrider show <profile>
@@ -273,14 +273,18 @@ func runWithOptions(
 		}
 		return formatOutput(newPlanOutput(plan), options.Human)
 	case "check":
-		if len(argv) != 2 {
-			return "", usageError("check expects exactly one profile id")
-		}
-		profile, err := manifest.Get(argv[1])
+		id, offline, err := parseCheckArguments(argv[1:])
 		if err != nil {
 			return "", err
 		}
-		plan, err := resolvePlan(argv[1], environment, true, "")
+		if offline {
+			return checkOffline(ctx, id, environment, options)
+		}
+		profile, err := manifest.Get(id)
+		if err != nil {
+			return "", err
+		}
+		plan, err := resolvePlan(id, environment, true, "")
 		if err != nil {
 			return "", err
 		}

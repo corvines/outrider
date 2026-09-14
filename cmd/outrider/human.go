@@ -11,6 +11,8 @@ import (
 
 func humanOutput(value any) (string, error) {
 	switch output := value.(type) {
+	case offlineOutput:
+		return humanOffline(output), nil
 	case profileListOutput:
 		return humanProfileList(output), nil
 	case profileDetailOutput:

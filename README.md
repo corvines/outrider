@@ -20,20 +20,18 @@ The models fall into two categories:
 Vera integration adds a place to start before connecting a paid provider,
 including simple local chat. A fuller setup concierge is still in development.
 
-For desktop use, open `Outrider.app`, choose Download starter model & Chat
-once, then chat inside the app. A downloaded model is reused instead of
-downloaded again. The starter model requires 64 GB RAM. No Terminal is needed
-for desktop use. See [Desktop app](docs/desktop-app.md).
+## Using the app
 
-```sh
-go build ./cmd/outrider
-./outrider install
-outrider pull qwen35b-mtp
-outrider start
-outrider use qwen35b-mtp
-```
+After [installing the desktop preview](docs/install.md), open `Outrider.app`.
+The app starts the local server for you.
 
-The endpoint stays the same when you switch models.
+1. To use the local-frontier model, open Models, find `qwen35b-mtp`, and
+   choose Download. When it finishes, choose Load, then open Chat.
+2. To try a smoke model, choose Download starter model & Chat on Overview.
+   The app prepares the starter and opens Chat for you.
+
+Downloaded models are kept for the next session. The starter currently
+requires 64 GB RAM. See [Desktop app](docs/desktop-app.md) for app controls.
 
 Apple silicon only. Weights come from their publishers under their own
 licenses.
@@ -51,7 +49,7 @@ no cloud fallback.
 ## Docs
 
 - [Install](docs/install.md)
-- [Running models](docs/running-models.md)
+- [Command-line reference](docs/running-models.md)
 - [Desktop app](docs/desktop-app.md)
 - [Finding Outrider from another program](docs/discovery.md)
 - [Gateway API](docs/gateway-api.md)

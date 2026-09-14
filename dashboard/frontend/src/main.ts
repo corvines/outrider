@@ -1,4 +1,6 @@
 import {DashboardService} from "../bindings/github.com/corvines/outrider/dashboard";
+import {setupState} from "./first_run";
+import {mountChat} from "./chat";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 
@@ -8,6 +10,7 @@ app.innerHTML = `
       <div class="brand"><div class="brand-row"><span class="brand-mark" aria-hidden="true"></span><h1>Outrider</h1></div><small>local model server</small></div>
       <nav class="nav" aria-label="Dashboard sections">
         <button class="active" type="button" data-target="overview">Overview</button>
+        <button type="button" data-target="chat">Chat</button>
         <button type="button" data-target="models">Models</button>
         <button type="button" data-target="performance">Performance</button>
         <button type="button" data-target="logs">Logs</button>
@@ -26,7 +29,14 @@ app.innerHTML = `
         <section class="status-card">
           <div class="status-row"><span id="status-dot" class="status-dot"></span><span id="status-label" class="status-label">Checking gateway…</span></div>
           <div id="status-detail" class="status-detail">Connecting to the local Outrider gateway</div>
-          <div class="status-actions"><button id="stop-model" class="refresh" type="button" disabled>Stop model</button></div>
+          <div class="status-actions"><button id="start-server" class="refresh" type="button">Start server</button><button id="stop-server" class="refresh" type="button">Stop server</button><button id="quit-server" class="refresh" type="button">Quit Outrider</button><button id="stop-model" class="refresh" type="button" disabled>Unload model</button></div>
+          <p class="card-note">Stop server ends model requests in all connected chats. Downloaded models stay on disk.</p>
+        </section>
+        <section class="status-card" aria-labelledby="starter-title">
+          <h3 id="starter-title">Start chatting</h3>
+          <p id="starter-description" class="status-detail">Start the server to check your downloaded models.</p>
+          <div class="status-actions"><button id="start-chat" class="refresh" type="button" disabled>Chat</button><button id="choose-model" class="refresh" type="button">Choose another model</button></div>
+          <p class="card-note">Chat stays inside Outrider. The starter model downloads only when you choose Download.</p>
         </section>
         <section class="rows">
           <div class="row"><div class="row-head"><span class="row-label">Active model</span><span id="model-note" class="row-note">No model loaded</span></div><div id="model" class="row-value">—</div></div>
@@ -37,6 +47,8 @@ app.innerHTML = `
         </section>
         <article class="card chart-card"><div class="card-title">Model memory</div><div id="memory" class="card-value">—</div><div class="chart-wrap"><div class="chart-y-labels"><span class="chart-label" data-axis-high>—</span><span class="chart-label" data-axis-low>—</span></div><svg id="memory-chart" class="sparkline" viewBox="0 0 360 170" preserveAspectRatio="none" role="img" aria-label="Resident memory trend"><line class="chart-axis" x1="42" y1="14" x2="42" y2="132" /><line class="chart-axis" x1="42" y1="132" x2="350" y2="132" /><line class="chart-grid" x1="42" y1="14" x2="350" y2="14" /><polyline /></svg><div class="chart-x-labels"><span>older</span><span>now</span></div></div><div class="card-note">resident set</div></article>
       </div>
+
+      <div id="page-chat" class="page hidden"></div>
 
       <div id="page-models" class="page hidden">
         <div class="page-intro"><p>Download, load, or remove local models.</p><form id="download-form" class="download-form"><input id="download-path" type="text" placeholder="Hugging Face path or HTTPS URL" aria-label="Model URL or path"><button class="refresh" type="submit">Add &amp; download</button></form></div>
@@ -72,6 +84,11 @@ const element = <T extends Element>(id: string) => document.getElementById(id)! 
 const dot = element<HTMLSpanElement>("status-dot");
 const label = element<HTMLSpanElement>("status-label");
 const detail = element<HTMLDivElement>("status-detail");
+const startServer = element<HTMLButtonElement>("start-server");
+const stopServer = element<HTMLButtonElement>("stop-server");
+const quitServer = element<HTMLButtonElement>("quit-server");
+const startChat = element<HTMLButtonElement>("start-chat");
+const starterDescription = element<HTMLParagraphElement>("starter-description");
 const stopModel = element<HTMLButtonElement>("stop-model");
 const pauseModel = element<HTMLButtonElement>("pause-model");
 const loadingProgress = element<HTMLDivElement>("loading-progress");
@@ -109,20 +126,27 @@ const navButtons = document.querySelectorAll<HTMLButtonElement>(".nav button[dat
 const pages = document.querySelectorAll<HTMLElement>(".page");
 let memorySamples: number[] = [];
 let pendingDeleteModel = "";
+let latestSnapshot: Awaited<ReturnType<typeof DashboardService.Snapshot>> | undefined;
+let serverInFlight = false;
+let chatView: ReturnType<typeof mountChat> | undefined;
 
 const pageMeta: Record<string, {title: string}> = {
   overview: {title: "Serving status"},
+  chat: {title: "Chat"},
   models: {title: "Model catalog"},
   performance: {title: "Runtime signals"},
   logs: {title: "Gateway logs"},
 };
 
 function showPage(target: string) {
+  const enteringChat = target === "chat" && !content.classList.contains("chat-active");
   pages.forEach((page) => page.classList.toggle("hidden", page.id !== `page-${target}`));
   navButtons.forEach((button) => button.classList.toggle("active", button.dataset.target === target));
   content.classList.toggle("models-active", target === "models");
+  content.classList.toggle("chat-active", target === "chat");
   const meta = pageMeta[target] || pageMeta.overview;
   pageTitle.textContent = meta.title;
+  if (enteringChat) chatView?.enter();
 }
 
 function formatBytes(bytes: number) {
@@ -155,6 +179,7 @@ function setModelText(value: string) {
 }
 
 function renderOffline(error: string) {
+  chatView?.updateSetup({gatewayHealth: "offline", model: {kind: "stopped", preset: ""}, models: [], serverError: error}, serverInFlight || actionInFlight);
   dot.className = "status-dot offline";
   label.textContent = "Gateway offline";
   detail.textContent = error;
@@ -175,6 +200,8 @@ function renderOffline(error: string) {
   stopModel.disabled = true;
   pauseModel.disabled = true;
   loadingProgress.classList.add("hidden");
+  startChat.disabled = true;
+  starterDescription.textContent = "Start the server to check your downloaded models.";
 }
 
 async function refresh() {
@@ -197,14 +224,32 @@ function downloadStatus(entry: {cached: boolean; path?: string}) {
 }
 
 function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Snapshot>>) {
-  if (catalogUnavailable(snapshot)) { renderOffline(snapshot.error || "Outrider is offline."); return; }
+  latestSnapshot = snapshot;
+  chatView?.updateSetup(snapshot, actionInFlight || serverInFlight);
+  const setup = setupState(snapshot, actionInFlight);
+  startServer.disabled = !setup.canStart || serverInFlight;
+  startServer.textContent = setup.startLabel;
+  startServer.classList.toggle("hidden", setup.ready && !setup.serverBusy);
+  stopServer.disabled = !setup.canStop || serverInFlight;
+  quitServer.disabled = !setup.canStop || serverInFlight;
+  startChat.disabled = !setup.canChat || serverInFlight;
+  startChat.textContent = setup.chatLabel;
+  starterDescription.textContent = !setup.ready ? "Start the server to check your downloaded models."
+    : setup.loading ? "Preparing the model. Progress is shown above; you can pause and resume."
+    : setup.needsDownload ? `Download Ling, the starter model${setup.sizeBytes ? ` (${formatBytes(setup.sizeBytes)})` : ""}? Runtime files may also be downloaded. You can choose another model instead.`
+    : `${setup.candidate} is already downloaded. Chat will reuse it without downloading the weights again.`;
+  if (catalogUnavailable(snapshot)) {
+    renderOffline(snapshot.serverError || snapshot.error || "Server stopped. Click Start server when ready.");
+    label.textContent = setup.serverBusy ? setup.startLabel : "Server stopped";
+    return;
+  }
   const healthy = snapshot.gatewayHealth === "ok";
   const legacy = snapshot.gatewayHealth === "legacy";
   const loading = snapshot.loading;
   dot.className = `status-dot ${healthy ? "ok" : legacy ? "legacy" : ""}`;
-  label.textContent = loading ? "Loading model" : healthy ? "Gateway healthy" : legacy ? "Gateway connected (legacy)" : "Gateway unavailable";
-  detail.textContent = snapshot.error
-    ? snapshot.error
+  label.textContent = setup.serverBusy ? setup.startLabel : setup.loading ? "Preparing model" : healthy ? "Server running" : legacy ? "Gateway connected (legacy)" : "Server stopped";
+  detail.textContent = snapshot.serverError || snapshot.error
+    ? snapshot.serverError || snapshot.error || ""
     : legacy
     ? "Catalog is read-only; restart Outrider from the current build to enable controls"
     : loading ? `Preparing ${loading.model}…` : snapshot.model.preset ? `${snapshot.model.preset} · ${snapshot.model.kind}` : "No model loaded";
@@ -223,13 +268,13 @@ function renderSnapshot(snapshot: Awaited<ReturnType<typeof DashboardService.Sna
   modelCount.textContent = `${catalog.length}`;
   const activeModel = catalog.find((entry) => entry.id === snapshot.model.preset);
   setContextText(formatContext(activeModel?.context ?? 0));
-  stopModel.disabled = !healthy || snapshot.model.kind !== "running" || !!loading;
-  pauseModel.disabled = !healthy || !loading || loading.phase === "paused" || loading.phase === "error";
+  stopModel.disabled = actionInFlight || serverInFlight || !healthy || snapshot.model.kind !== "running" || setup.loading;
+  pauseModel.disabled = !healthy || !setup.loading || serverInFlight;
   pauseModel.textContent = loading?.phase === "paused" ? "Paused" : "Pause loading";
   actionStatus.classList.toggle("error", !!snapshot.error);
   models.innerHTML = catalog.length ? catalog.map((entry) => {
     const active = entry.id === snapshot.model.preset && snapshot.model.kind === "running";
-    const disabled = !healthy || !!loading ? "disabled" : "";
+    const disabled = actionInFlight || serverInFlight || !healthy || setup.loading ? "disabled" : "";
     let actions = "";
     if (entry.protected) actions += `<span class="protected-badge">Protected</span>`;
     const canReveal = !!entry.path;
@@ -294,27 +339,51 @@ let actionInFlight = false;
 
 function setActionBusy(busy: boolean) {
   actionInFlight = busy;
-  if (!busy) return;
+  chatView?.updateSetup(latestSnapshot, busy || serverInFlight);
+  if (!busy) { if (latestSnapshot) renderSnapshot(latestSnapshot); return; }
+  startChat.disabled = true;
   stopModel.disabled = true;
-  pauseModel.disabled = true;
   models.querySelectorAll<HTMLButtonElement>("button[data-model]").forEach((button) => { button.disabled = true; });
 }
 
-async function runAction(message: string, action: () => Promise<Awaited<ReturnType<typeof DashboardService.Snapshot>>>) {
-  if (actionInFlight) return;
+async function runAction(message: string, action: () => Promise<Awaited<ReturnType<typeof DashboardService.Snapshot>>>, success = "Updated") {
+  if (actionInFlight || serverInFlight) return;
   actionStatus.textContent = message;
   setActionBusy(true);
   try {
     const snapshot = await action();
     renderSnapshot(snapshot);
-    actionStatus.textContent = snapshot.error || "Updated";
+    actionStatus.textContent = snapshot.error || (snapshot.loading?.phase === "paused" ? "Paused. Choose Resume & Chat when ready." : success);
     actionStatus.classList.toggle("error", !!snapshot.error);
   } catch (error) {
     actionStatus.textContent = String(error);
     actionStatus.classList.add("error");
+    chatView?.showError(String(error));
     void refresh();
   } finally {
     setActionBusy(false);
+  }
+}
+
+async function runServerAction(action: "start" | "stop" | "quit") {
+  if (serverInFlight) return;
+  serverInFlight = true;
+  chatView?.updateSetup(latestSnapshot, true);
+  startServer.disabled = stopServer.disabled = quitServer.disabled = startChat.disabled = true;
+  actionStatus.textContent = action === "start" ? "Starting server..." : "Stopping server...";
+  try {
+    const snapshot = await (action === "start" ? DashboardService.StartServer()
+      : action === "quit" ? DashboardService.QuitAndStopServer() : DashboardService.StopServer());
+    latestSnapshot = snapshot;
+    actionStatus.textContent = snapshot.serverError || (action === "start" ? "Server running" : "Server stopped");
+    actionStatus.classList.toggle("error", !!snapshot.serverError);
+  } catch (error) {
+    actionStatus.textContent = String(error);
+    actionStatus.classList.add("error");
+    chatView?.showError(String(error));
+  } finally {
+    serverInFlight = false;
+    if (latestSnapshot) renderSnapshot(latestSnapshot);
   }
 }
 
@@ -361,8 +430,37 @@ function escapeHTML(value: string) {
 
 navButtons.forEach((button) => button.addEventListener("click", () => showPage(button.dataset.target || "overview")));
 element<HTMLButtonElement>("refresh").addEventListener("click", refresh);
+startServer.addEventListener("click", () => void runServerAction("start"));
+stopServer.addEventListener("click", () => void runServerAction("stop"));
+quitServer.addEventListener("click", () => void runServerAction("quit"));
+element<HTMLButtonElement>("choose-model").addEventListener("click", () => showPage("models"));
+chatView = mountChat(element<HTMLDivElement>("page-chat"), {
+  models: () => showPage("models"),
+  prepare: prepareChat,
+  server: () => void runServerAction("start"),
+  pause: () => pauseModel.click(),
+});
+function prepareChat() {
+  if (!latestSnapshot) return;
+  const choice = setupState(latestSnapshot, false);
+  showPage("chat");
+  void runAction(choice.needsDownload ? "Downloading the starter model..." : "Preparing chat...",
+    async () => {
+      const snapshot = await DashboardService.StartChat(choice.needsDownload);
+      if (!snapshot.error && !snapshot.serverError && !snapshot.loading && snapshot.model.health && snapshot.model.kind === "running") {
+        showPage("chat");
+        chatView?.focus();
+      }
+      return snapshot;
+    }, "Chat ready");
+}
+startChat.addEventListener("click", prepareChat);
 stopModel.addEventListener("click", () => void runAction("Stopping model…", () => DashboardService.StopModel()));
-pauseModel.addEventListener("click", () => void runAction("Pausing model load…", () => DashboardService.PauseModel()));
+pauseModel.addEventListener("click", async () => {
+  pauseModel.disabled = true;
+  try { renderSnapshot(await DashboardService.PauseModel()); }
+  catch (error) { actionStatus.textContent = String(error); }
+});
 downloadForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const path = downloadPath.value.trim();
@@ -412,4 +510,5 @@ deleteConfirm.addEventListener("click", () => {
 
 showPage("overview");
 void refresh();
+void runServerAction("start");
 window.setInterval(() => void refresh(), 3000);

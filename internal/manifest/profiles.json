@@ -178,7 +178,6 @@
   },
   {
     "id": "ling3-tiny",
-    "dev": true,
     "runnable": true,
     "description": "Ling 3.0 Tiny Q4_K_M as a responsive short-context helper",
     "model": {

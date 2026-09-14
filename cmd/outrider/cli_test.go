@@ -385,7 +385,7 @@ func TestListWithoutDevelopmentEnabled(t *testing.T) {
 	for _, profile := range list.Profiles {
 		ids = append(ids, profile.ID)
 	}
-	if !reflect.DeepEqual(ids, []string{"qwen35b-mtp", "qwen35-0.8b", "qwen35-2b"}) {
+	if !reflect.DeepEqual(ids, []string{"ling3-tiny", "qwen35b-mtp", "qwen35-0.8b", "qwen35-2b"}) {
 		t.Fatalf("offered profiles = %v", ids)
 	}
 }

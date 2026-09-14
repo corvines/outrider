@@ -530,5 +530,56 @@
     "speculation": { "mode": "mtp", "tokens": 2, "minTokens": 0, "minProbability": 0 },
     "persistence": { "enabled": false },
     "admission": { "validatedPhysicalMemoryMiB": 8192 }
+  },
+  {
+    "id": "download-test",
+    "dev": true,
+    "runnable": true,
+    "description": "TinyStories 260K for download smoke checks (1.19 MB), not a chat assistant",
+    "model": {
+      "repo": "ggml-org/tiny-llamas",
+      "file": "stories260K.gguf",
+      "quant": "F32",
+      "sha256": "047bf46455a544931cff6fef14d7910154c56afbc23ab1c5e56a72e69912c04b",
+      "sizeBytes": 1185376
+    },
+    "context": {
+      "size": 128,
+      "original": 128
+    },
+    "gpuLayers": 0,
+    "fit": "off",
+    "flashAttention": false,
+    "kvCache": {
+      "keyType": "f16",
+      "valueType": "f16",
+      "unified": true
+    },
+    "batch": {
+      "size": 128,
+      "microSize": 128,
+      "parallel": 1
+    },
+    "memory": {
+      "mmap": true,
+      "mlock": false
+    },
+    "jinja": false,
+    "sampling": {
+      "temperature": 1,
+      "topP": 0.9,
+      "topK": 40,
+      "minP": 0,
+      "repeatPenalty": 1
+    },
+    "speculation": {
+      "mode": "none"
+    },
+    "persistence": {
+      "enabled": false
+    },
+    "admission": {
+      "validatedPhysicalMemoryMiB": 65536
+    }
   }
 ]

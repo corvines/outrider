@@ -23,3 +23,16 @@ when `outrider use` switches models.
 without touching anything. Add `--apply` to remove what it listed. Partial
 downloads and their resume metadata are kept for every profile, so an
 interrupted `pull` can still resume.
+
+## Download smoke check
+
+The development profile `download-test` downloads a 1.19 MB TinyStories GGUF.
+It exercises the profile downloader and checksum verification. It is not a
+chat assistant. Enable development profiles when running the command:
+
+```sh
+OUTRIDER_DEV=1 outrider pull download-test
+```
+
+Run it again to check cache reuse. The first pull also installs the pinned
+runtime if it is absent.

@@ -19,7 +19,7 @@ func TestProfiles(t *testing.T) {
 		ids = append(ids, profile.ID)
 	}
 	if !reflect.DeepEqual(ids, []string{
-		"qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-0.8b", "qwen35-2b",
+		"qwen3-1.7b", "minicpm5-1b", "granite4.2-3b", "ling3-tiny", "qwen35-4b-helper", "granite4-h-tiny", "qwen35b-mtp", "qwen35-0.8b", "qwen35-2b", "download-test",
 	}) {
 		t.Fatalf("profile ids = %v", ids)
 	}

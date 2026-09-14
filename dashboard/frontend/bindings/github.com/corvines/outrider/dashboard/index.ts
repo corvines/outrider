@@ -8,6 +8,8 @@ export {
 
 export type {
     AdvertisedModel,
+    ChatMessage,
+    ChatState,
     DashboardSnapshot,
     LoadingSnapshot,
     ModelSnapshot

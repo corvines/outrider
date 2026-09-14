@@ -14,7 +14,23 @@ export interface AdvertisedModel {
     "path"?: string;
 }
 
+export interface ChatMessage {
+    "role": string;
+    "content": string;
+}
+
+export interface ChatState {
+    "mode": string;
+    "model": string;
+    "messages": ChatMessage[] | null;
+    "streaming": boolean;
+    "error": string;
+    "stopped": boolean;
+}
+
 export interface DashboardSnapshot {
+    "serverAction"?: string;
+    "serverError"?: string;
     "gatewayEndpoint": string;
     "gatewayHealth": string;
     "model": ModelSnapshot;

@@ -9,6 +9,14 @@ import { Call as $Call, CancellablePromise as $CancellablePromise } from "@wails
 // @ts-ignore: Unused imports
 import * as $models from "./models.js";
 
+export function CancelChat(): $CancellablePromise<void> {
+    return $Call.ByID(2406397701);
+}
+
+export function ChatSnapshot(): $CancellablePromise<$models.ChatState> {
+    return $Call.ByID(2268474523);
+}
+
 export function DeleteModel(modelID: string): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(1797009927, modelID);
 }
@@ -25,18 +33,49 @@ export function LoadModel(modelID: string): $CancellablePromise<$models.Dashboar
     return $Call.ByID(4024759518, modelID);
 }
 
+export function NewChat(): $CancellablePromise<$models.ChatState> {
+    return $Call.ByID(4139838255);
+}
+
 export function PauseModel(): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(446540258);
+}
+
+export function QuitAndStopServer(): $CancellablePromise<$models.DashboardSnapshot> {
+    return $Call.ByID(1630150716);
 }
 
 export function RevealModel(modelID: string): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(1156740125, modelID);
 }
 
+export function SendChat(text: string): $CancellablePromise<$models.ChatState> {
+    return $Call.ByID(801699313, text);
+}
+
+export function SetChatMode(mode: string): $CancellablePromise<$models.ChatState> {
+    return $Call.ByID(3711792170, mode);
+}
+
 export function Snapshot(): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(217719277);
 }
 
+/**
+ * StartChat downloads only after explicit consent when no runnable cache exists.
+ */
+export function StartChat(downloadStarter: boolean): $CancellablePromise<$models.DashboardSnapshot> {
+    return $Call.ByID(3830199425, downloadStarter);
+}
+
+export function StartServer(): $CancellablePromise<$models.DashboardSnapshot> {
+    return $Call.ByID(4241769300);
+}
+
 export function StopModel(): $CancellablePromise<$models.DashboardSnapshot> {
     return $Call.ByID(3067977082);
+}
+
+export function StopServer(): $CancellablePromise<$models.DashboardSnapshot> {
+    return $Call.ByID(1401170034);
 }

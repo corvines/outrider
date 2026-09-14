@@ -28,6 +28,7 @@ var revealInFinder = func(path string) error {
 }
 
 type DashboardService struct {
+	conversation  *conversation
 	endpoint      string
 	client        *http.Client
 	controlClient *http.Client
@@ -106,6 +107,7 @@ type modelsResponse struct {
 
 func NewDashboardService(endpoint string) *DashboardService {
 	return &DashboardService{
+		conversation:  newConversation(endpoint),
 		endpoint:      endpoint,
 		client:        &http.Client{Timeout: 3 * time.Second},
 		controlClient: &http.Client{Timeout: 30 * time.Minute},

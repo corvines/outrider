@@ -1,6 +1,15 @@
 # Outrider
 
-Outrider runs a large language model on your own Mac and serves it on loopback.
+Outrider simplifies downloading, configuring, and running local models on
+M-series Apple Silicon Macs and serves them on loopback. Vera compatibility
+is a primary goal, including the features Vera builds on local model serving.
+Outrider supplies the local endpoint and basic chat; Vera supplies the agent
+environment and its additional features.
+
+The default `ling3-tiny` model is a setup helper for setup questions and basic
+local chat. Do not present it as a general-purpose coding or reasoning agent,
+or imply that every local model supports every Vera task equally well.
+Model capability depends on the selected model, not ease of installation.
 
 ## Outrider, Vera, and OpenRouter
 
